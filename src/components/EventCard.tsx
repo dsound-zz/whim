@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { formatPrice } from "@/lib/utils/formatPrice";
 
 type EventProps = {
   title: string;
@@ -6,10 +7,12 @@ type EventProps = {
   startAt: string;
   imageUrl?: string | null;
   priceMin?: number | null;
-  isFree?: boolean;
+  priceMax?: number | null;
+  isFree?: boolean | null;
+  ticketUrl?: string | null;
 };
 
-export function EventCard({ title, venueName, startAt, imageUrl, priceMin, isFree }: EventProps) {
+export function EventCard({ title, venueName, startAt, imageUrl, priceMin, priceMax, isFree, ticketUrl }: EventProps) {
   const formattedDate = new Date(startAt).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -35,7 +38,7 @@ export function EventCard({ title, venueName, startAt, imageUrl, priceMin, isFre
           </div>
         )}
         <div className="absolute top-3 right-3 glass px-3 py-1 rounded-full text-xs font-semibold text-white">
-          {isFree ? "Free" : priceMin ? `$${priceMin}+` : "Tickets"}
+          {formatPrice(isFree ?? false, priceMin ?? null, priceMax ?? null, ticketUrl ?? null)}
         </div>
       </div>
       

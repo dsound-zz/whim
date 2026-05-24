@@ -17,6 +17,7 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "eventbrite_api",
   "ticketmaster_api",
   "dice_api",
+  "dice_scrape",
   "seatgeek_api",
   "ical",
   "rss",

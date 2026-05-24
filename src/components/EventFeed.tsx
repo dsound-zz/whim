@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { EventCard } from "./EventCard";
+import { MapModal } from "./MapModal";
 
 type EventType = {
   id: string;
@@ -11,12 +12,16 @@ type EventType = {
   imageUrl: string | null;
   priceMin: number | null;
   isFree: boolean;
+  lat: number | null;
+  lng: number | null;
+  ticketUrl: string | null;
 };
 
 export function EventFeed() {
   const [events, setEvents] = useState<EventType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<EventType | null>(null);
 
   useEffect(() => {
     async function fetchEvents() {
@@ -64,18 +69,36 @@ export function EventFeed() {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-      {events.map((event) => (
-        <EventCard
-          key={event.id}
-          title={event.title}
-          venueName={event.venueName}
-          startAt={event.startAt}
-          imageUrl={event.imageUrl}
-          priceMin={event.priceMin}
-          isFree={event.isFree}
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {events.map((event) => (
+          <div 
+            key={event.id} 
+            onClick={() => event.lat && event.lng && setSelectedEvent(event)}
+            className={event.lat && event.lng ? "cursor-pointer" : ""}
+          >
+            <EventCard
+              title={event.title}
+              venueName={event.venueName}
+              startAt={event.startAt}
+              imageUrl={event.imageUrl}
+              priceMin={event.priceMin}
+              isFree={event.isFree}
+            />
+          </div>
+        ))}
+      </div>
+      
+      {/* Map Modal */}
+      {selectedEvent && selectedEvent.lat && selectedEvent.lng && (
+        <MapModal 
+          lat={selectedEvent.lat} 
+          lng={selectedEvent.lng} 
+          venueName={selectedEvent.venueName} 
+          ticketUrl={selectedEvent.ticketUrl}
+          onClose={() => setSelectedEvent(null)} 
         />
-      ))}
-    </div>
+      )}
+    </>
   );
 }
