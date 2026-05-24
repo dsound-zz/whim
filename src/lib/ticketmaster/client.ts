@@ -44,7 +44,7 @@ async function processTicketmasterPayload(tmEvents: any[]) {
       
       const eventToInsert = {
         externalId: tmEvent.id,
-        sourceType: 'ticketmaster',
+        sourceType: 'ticketmaster_api',
         title: tmEvent.name || 'Unknown Title',
         description: tmEvent.description || tmEvent.info || null,
         imageUrl: tmEvent.images?.[0]?.url || null,
@@ -65,7 +65,7 @@ async function processTicketmasterPayload(tmEvents: any[]) {
       };
 
       const existing = await db.select().from(events).where(
-        and(eq(events.externalId, eventToInsert.externalId), eq(events.sourceType, 'ticketmaster'))
+        and(eq(events.externalId, eventToInsert.externalId), eq(events.sourceType, 'ticketmaster_api'))
       );
 
       if (existing.length > 0) {

@@ -34,7 +34,7 @@ You are a senior software engineer acting as an autonomous agent on this project
 
 ## What Whim is
 
-Whim is a B2B local events data platform. It aggregates, normalizes, geocodes, and deduplicates local event data from multiple sources into one unified API that other companies build on. The consumer value proposition is spontaneous, approachable local event discovery — "what's happening near me tonight" — but the primary business is the data infrastructure underneath.
+Whim is a B2B local events data platform. It aggregates, normalizes, geocodes, and deduplicates local event data from multiple sources into one unified API that other companies build on. The consumer value proposition is spontaneous, approachable local event discovery — "what's happening near me tonight" — an everything aggregator with simple UI that removes friction for spontaneous going out, not planning weeks ahead. But the primary business is the data infrastructure underneath.
 
 Whim is NOT a ticketing platform. Eventbrite, Ticketmaster, and Dice are data sources Whim pulls from, not competitors. Whim is to local events what Kayak is to flights: a meta-aggregator that normalizes data from multiple platforms plus sources those platforms don't cover.
 
@@ -104,7 +104,7 @@ Sources → Workers → Event Store → Delivery
 
 ## Current phase
 
-MVP: Pull events from Eventbrite API for NYC, normalize to schema, store in Postgres, expose one GET endpoint that returns events by lat/lng radius and date range. This validates the schema against real data and produces a demoable API endpoint.
+MVP: Pull events from Ticketmaster API for NYC, normalize to schema, store in Postgres, expose one GET endpoint that returns events by lat/lng radius and date range. This validates the schema against real data and produces a demoable API endpoint.
 
 ## What is NOT in scope yet
 
