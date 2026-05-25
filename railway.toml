@@ -1,0 +1,15 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "echo 'Whim scrapers service'"
+
+[[services]]
+name = "scraper-dice"
+cronSchedule = "0 2 * * *"
+command = "npx ts-node scripts/scrape-dice.ts"
+
+[[services]]
+name = "scraper-ra"
+cronSchedule = "0 2 * * *"
+command = "npx ts-node scripts/scrape-ra.ts"

@@ -104,11 +104,19 @@ Sources → Workers → Event Store → Delivery
 
 ## Current phase
 
-MVP: Pull events from Ticketmaster API for NYC, normalize to schema, store in Postgres, expose one GET endpoint that returns events by lat/lng radius and date range. This validates the schema against real data and produces a demoable API endpoint.
+Phase 1 (MVP) is mostly complete:
+- Ingesting structured events via Ticketmaster API (NYC).
+- Ingesting unstructured events via headless Playwright scraping from Dice.fm (NYC).
+- Normalizing to schema, storing in Postgres, and deduplicating recurring events using raw SQL window functions.
+- Geocoding venues using Mapbox Geocoding API with strict bounding boxes (NYC).
+- Built an internal Admin Visualization Dashboard (`/admin/events`) with Mapbox GL JS clustering, event toggling, date filtering, and missing-geo statistics.
+- Shared `formatPrice` utility handling complex edge cases (free vs range vs unknown).
+
+Next up: Expand sources (Eventbrite), build the Consumer Feed UI, and automate the ingestion pipelines via CRON jobs.
 
 ## What is NOT in scope yet
 
-- Consumer-facing app
+- Consumer-facing app (partially started via EventFeed concept, but not primary focus yet)
 - Venue portal
 - Email parsing pipeline
 - Friend coordination / social layer

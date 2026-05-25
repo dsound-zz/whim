@@ -6,6 +6,7 @@ import { formatPrice } from "@/lib/utils/formatPrice";
 const getSourceAbbr = (source: string) => {
   if (source.includes('ticketmaster')) return 'TM';
   if (source.includes('dice')) return 'DICE';
+  if (source.includes('ra_scrape')) return 'RA';
   if (source.includes('eventbrite')) return 'EB';
   if (source.includes('ical')) return 'ICAL';
   if (source.includes('email')) return 'EMAIL';
@@ -15,6 +16,7 @@ const getSourceAbbr = (source: string) => {
 const getSourceColor = (source: string) => {
   if (source.includes('ticketmaster')) return 'bg-blue-900 text-blue-300';
   if (source.includes('dice')) return 'bg-orange-900 text-orange-300';
+  if (source.includes('ra_scrape')) return 'bg-fuchsia-900 text-fuchsia-300';
   if (source.includes('eventbrite')) return 'bg-red-900 text-red-300';
   return 'bg-gray-800 text-gray-300';
 };

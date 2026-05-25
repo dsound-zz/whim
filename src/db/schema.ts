@@ -24,6 +24,7 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "email",
   "submission",
   "scrape",
+  "ra_scrape",
 ]);
 
 export const eventStatusEnum = pgEnum("event_status", [

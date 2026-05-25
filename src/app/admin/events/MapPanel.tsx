@@ -11,6 +11,7 @@ mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoiZHVtb
 const getSourceColorHex = (source: string) => {
   if (source.includes('ticketmaster')) return '#3b82f6'; 
   if (source.includes('dice')) return '#f97316'; 
+  if (source.includes('ra_scrape')) return '#c026d3';
   if (source.includes('eventbrite')) return '#ef4444'; 
   if (source.includes('ical')) return '#22c55e'; 
   return '#6b7280'; 

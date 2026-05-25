@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sync-ticketmaster",
+      "schedule": "0 */6 * * *"
+    }
+  ]
+}
