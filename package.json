@@ -10,8 +10,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "scrape:dice": "ts-node scripts/scrape-dice.ts",
-    "scrape:ra": "ts-node scripts/scrape-ra.ts"
+    "sync:ticketmaster": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-ticketmaster.ts",
+    "sync:eventbrite": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-eventbrite.ts",
+    "scrape:dice": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/scrape-dice.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -35,6 +36,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "tsx": "^4.22.3",
     "typescript": "^5"
   }
