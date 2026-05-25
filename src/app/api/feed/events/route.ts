@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { events } from "@/db/schema";
 import { and, eq, isNotNull, gte, lt } from "drizzle-orm";
 import { calculateDistanceMiles } from "@/lib/utils/calculateDistance";
+import { deduplicateEvents } from "@/lib/utils/deduplicateEvents";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -53,11 +54,14 @@ export async function GET(request: NextRequest) {
         )
       );
 
-    const sortedEvents = fetchedEvents
-      .map(event => ({
-        ...event,
-        distanceMiles: calculateDistanceMiles(userLat, userLng, event.lat!, event.lng!),
-      }))
+    const withDistance = fetchedEvents.map(event => ({
+      ...event,
+      distanceMiles: calculateDistanceMiles(userLat, userLng, event.lat!, event.lng!),
+    }));
+
+    const deduped = deduplicateEvents(withDistance);
+
+    const sortedEvents = deduped
       .sort((a, b) => {
         if (a.distanceMiles !== b.distanceMiles) {
           return a.distanceMiles - b.distanceMiles;

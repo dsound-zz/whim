@@ -44,7 +44,7 @@ async function processTicketmasterPayload(tmEvents: any[]) {
       
       const eventToInsert = {
         externalId: tmEvent.id,
-        sourceType: 'ticketmaster_api',
+        sourceType: 'ticketmaster_api' as const,
         title: tmEvent.name || 'Unknown Title',
         description: tmEvent.description || tmEvent.info || null,
         imageUrl: tmEvent.images?.[0]?.url || null,
@@ -61,7 +61,7 @@ async function processTicketmasterPayload(tmEvents: any[]) {
         ticketUrl: tmEvent.url,
         platform: 'Ticketmaster',
         rawSource: tmEvent,
-        status: tmEvent.dates?.status?.code === 'onsale' ? 'active' : (tmEvent.dates?.status?.code === 'cancelled' ? 'cancelled' : 'active'),
+        status: (tmEvent.dates?.status?.code === 'onsale' ? 'active' : (tmEvent.dates?.status?.code === 'cancelled' ? 'cancelled' : 'active')) as 'active' | 'cancelled',
       };
 
       const existing = await db.select().from(events).where(

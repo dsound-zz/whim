@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { events } from "@/db/schema";
 import { and, eq, isNotNull, gte, lt } from "drizzle-orm";
 import { calculateDistanceMiles } from "@/lib/utils/calculateDistance";
+import { deduplicateEvents } from "@/lib/utils/deduplicateEvents";
 
 export default async function FeedPage() {
   // Server-side initial fetch (NYC center, Tonight)
@@ -31,11 +32,15 @@ export default async function FeedPage() {
         )
       );
 
-    initialEvents = fetchedEvents
+    const withDistance = fetchedEvents
       .map(event => ({
         ...event,
         distanceMiles: calculateDistanceMiles(userLat, userLng, event.lat!, event.lng!),
-      }))
+      }));
+
+    const deduped = deduplicateEvents(withDistance);
+
+    initialEvents = deduped
       .sort((a, b) => {
         if (a.distanceMiles !== b.distanceMiles) {
           return a.distanceMiles - b.distanceMiles;

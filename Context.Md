@@ -104,15 +104,18 @@ Sources → Workers → Event Store → Delivery
 
 ## Current phase
 
-Phase 1 (MVP) is mostly complete:
+Phase 1 (MVP) is complete:
 - Ingesting structured events via Ticketmaster API (NYC).
 - Ingesting unstructured events via headless Playwright scraping from Dice.fm (NYC).
+- Ingesting/verifying Eventbrite API ingestion (mock data fallback when no key is supplied).
 - Normalizing to schema, storing in Postgres, and deduplicating recurring events using raw SQL window functions.
 - Geocoding venues using Mapbox Geocoding API with strict bounding boxes (NYC).
 - Built an internal Admin Visualization Dashboard (`/admin/events`) with Mapbox GL JS clustering, event toggling, date filtering, and missing-geo statistics.
+- Built a query-time cross-platform event deduplication helper that clusters identical events from multiple platforms and combines ticketing sources.
+- Built the Consumer Feed UI (`/feed`) and Event Detail view (`/feed/[id]`) with a "Compare Tickets" price/platform comparison component.
 - Shared `formatPrice` utility handling complex edge cases (free vs range vs unknown).
 
-Next up: Expand sources (Eventbrite), build the Consumer Feed UI, and automate the ingestion pipelines via CRON jobs.
+Next up: Automate the ingestion pipelines via CRON jobs and begin B2B client auth/feed integration.
 
 ## What is NOT in scope yet
 

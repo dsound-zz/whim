@@ -48,7 +48,7 @@ async function processEventbritePayload(eventbriteEvents: any[]) {
       
       const eventToInsert = {
         externalId: ebEvent.id,
-        sourceType: 'eventbrite',
+        sourceType: 'eventbrite_api' as const,
         title: ebEvent.name?.text || 'Unknown Title',
         description: ebEvent.description?.text,
         imageUrl: ebEvent.logo?.url,
@@ -62,12 +62,12 @@ async function processEventbritePayload(eventbriteEvents: any[]) {
         ticketUrl: ebEvent.url,
         platform: 'Eventbrite',
         rawSource: ebEvent,
-        status: ebEvent.status === 'live' ? 'active' : 'cancelled',
+        status: (ebEvent.status === 'live' ? 'active' : 'cancelled') as 'active' | 'cancelled',
       };
 
       // Upsert logic (simple for MVP)
       const existing = await db.select().from(events).where(
-        and(eq(events.externalId, eventToInsert.externalId), eq(events.sourceType, 'eventbrite'))
+        and(eq(events.externalId, eventToInsert.externalId), eq(events.sourceType, 'eventbrite_api'))
       );
 
       if (existing.length > 0) {

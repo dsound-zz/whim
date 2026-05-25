@@ -1,11 +1,13 @@
 import { db } from "@/db";
 import { events } from "@/db/schema";
-import { eq, and, gt, asc } from "drizzle-orm";
+import { eq, and, gt, asc, gte, lt } from "drizzle-orm";
 import { formatPrice } from "@/lib/utils/formatPrice";
+import { deduplicateEvents } from "@/lib/utils/deduplicateEvents";
 import Link from "next/link";
 
-export default async function EventDetailPage({ params }: { params: { id: string } }) {
-  const [event] = await db.select().from(events).where(eq(events.id, params.id)).limit(1);
+export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
 
   if (!event) {
     return (
@@ -15,6 +17,38 @@ export default async function EventDetailPage({ params }: { params: { id: string
       </div>
     );
   }
+
+  // Find other occurrences of the same event on other platforms for comparison
+  const startOfDay = new Date(event.startAt);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(event.startAt);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const sameDayEvents = await db.select().from(events).where(
+    and(
+      eq(events.status, "active"),
+      gte(events.startAt, startOfDay),
+      lt(events.startAt, endOfDay)
+    )
+  );
+
+  const groupedEvents = deduplicateEvents(sameDayEvents);
+  const matchedGroup = groupedEvents.find(group => 
+    group.id === event.id || 
+    (group.title.toLowerCase() === event.title.toLowerCase() && group.venueName?.toLowerCase() === event.venueName?.toLowerCase())
+  );
+
+  const ticketSources = matchedGroup?.ticketSources || [
+    {
+      platform: event.platform || "Unknown",
+      ticketUrl: event.ticketUrl,
+      priceMin: event.priceMin,
+      priceMax: event.priceMax,
+      isFree: event.isFree,
+    }
+  ];
+
+  const primaryTicketUrl = event.ticketUrl || ticketSources.find(s => s.ticketUrl)?.ticketUrl || "#";
 
   // Find future occurrences
   let futureDates: any[] = [];
@@ -91,6 +125,34 @@ export default async function EventDetailPage({ params }: { params: { id: string
           </div>
         )}
 
+        {/* Compare Tickets */}
+        {ticketSources.length > 1 && (
+          <div>
+            <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3">Compare Tickets</h3>
+            <div className="flex flex-col gap-2">
+              {ticketSources.map((source, idx) => (
+                <a 
+                  key={idx} 
+                  href={source.ticketUrl || "#"}
+                  target={source.ticketUrl ? "_blank" : "_self"}
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between bg-zinc-900 border border-zinc-800 hover:border-zinc-700 p-4 rounded-xl transition-colors"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-bold text-sm text-white">{source.platform}</span>
+                    <span className="text-xs text-zinc-400">
+                      {formatPrice(source.isFree ?? false, source.priceMin, source.priceMax, source.ticketUrl)}
+                    </span>
+                  </div>
+                  <span className="text-xs text-blue-500 font-semibold flex items-center gap-1">
+                    Select <span>→</span>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         {event.description && (
           <div>
             <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-2">About</h3>
@@ -109,12 +171,12 @@ export default async function EventDetailPage({ params }: { params: { id: string
             <span className="text-xl font-bold">{priceTag}</span>
           </div>
           <a 
-            href={event.ticketUrl || "#"} 
-            target={event.ticketUrl ? "_blank" : "_self"}
+            href={primaryTicketUrl} 
+            target={primaryTicketUrl !== "#" ? "_blank" : "_self"}
             rel="noopener noreferrer"
             className="flex-1 bg-white hover:bg-zinc-200 text-black font-bold py-4 rounded-xl text-center text-lg transition-colors"
           >
-            {event.ticketUrl ? "Get Tickets" : "More Info"}
+            {primaryTicketUrl !== "#" ? "Get Tickets" : "More Info"}
           </a>
         </div>
       </div>

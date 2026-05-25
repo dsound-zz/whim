@@ -1,15 +1,16 @@
-import { chromium } from 'playwright-extra';
-import stealth from 'puppeteer-extra-plugin-stealth';
 import { db } from '@/db';
 import { events } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
 
-// Apply stealth plugin to bypass Cloudflare
-chromium.use(stealth());
-
 const DICE_NEW_YORK_URL = 'https://dice.fm/browse/new_york-5bbf4db0f06331478e9b2c59?date=this_week';
 
 export async function scrapeDiceEvents() {
+  const { chromium } = await import('playwright-extra');
+  const { default: stealth } = await import('puppeteer-extra-plugin-stealth');
+
+  // Apply stealth plugin to bypass Cloudflare
+  chromium.use(stealth());
+
   console.log('Launching Playwright with Stealth Plugin...');
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();

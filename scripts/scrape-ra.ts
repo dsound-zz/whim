@@ -1,8 +1,5 @@
 import { chromium } from 'playwright-extra';
 import stealth from 'puppeteer-extra-plugin-stealth';
-import { db } from '../src/db';
-import { events, ingestionSources } from '../src/db/schema';
-import { eq, and } from 'drizzle-orm';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
@@ -10,6 +7,10 @@ dotenv.config();
 chromium.use(stealth());
 
 async function main() {
+  const { db } = await import('../src/db');
+  const { events, ingestionSources } = await import('../src/db/schema');
+  const { eq, and } = await import('drizzle-orm');
+
   console.log('[RA] Starting scrape:', new Date().toISOString());
   const browser = await chromium.launch({ headless: true });
   
@@ -20,7 +21,7 @@ async function main() {
     
     const page = await context.newPage();
     console.log('[RA] Navigating to RA NYC events...');
-    await page.goto('https://ra.co/events/us/newyork', { waitUntil: 'networkidle' });
+    await page.goto('https://ra.co/events/us/newyork', { waitUntil: 'domcontentloaded' });
 
     console.log('[RA] Waiting for event listings to appear...');
     await page.waitForSelector('[data-testid="event-listing-list"]', { timeout: 15000 }).catch(() => null);
@@ -83,7 +84,7 @@ async function main() {
           isFree = true;
           priceMin = 0;
         } else {
-          const match = raw.priceStr.match(/\\$?(\\d+\\.?\\d*)/);
+          const match = raw.priceStr.match(/\$?(\d+\.?\d*)/);
           if (match) priceMin = parseFloat(match[1]);
         }
       }
