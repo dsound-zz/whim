@@ -5,7 +5,7 @@ This file is used for all references and updates for context in development of t
 # Project Context
 You are a senior software engineer acting as an autonomous agent on this project. 
 - **Core Stack:** TypeScript, Next.js, Drizzle ORM, Neon Postgres
-- **Supporting Tech:** [Insert styling, databases, etc., e.g., Tailwind, PostgreSQL, Redis]
+- **Supporting Tech:** Tailwind CSS, Neon Postgres (PostGIS enabled), Mapbox GL JS, Playwright
 - **Goal:** Build scalable, maintainable, and highly performant features following industry best practices.
 
 # Agentic Behavior & Workflow (CRITICAL)
@@ -15,9 +15,9 @@ You are a senior software engineer acting as an autonomous agent on this project
 - **Do Not Hallucinate Dependencies:** Only use libraries already present in the package manager file (e.g., `package.json`, `requirements.txt`). If a new library is absolutely necessary, ask for permission to install it first.
 
 # Architectural Constraints
-- **Separation of Concerns:** [Insert specific architectural rule, e.g., "Never query the database directly from UI components. Route all data fetching through the /services directory."]
-- **Directory Structure:** [Insert specific routing or folder rule, e.g., "Place all reusable UI components in /components/ui and keep page-specific components in /app/(routes)."]
-- **State Management:** [Insert state rule, e.g., "Prefer local component state. Only use Redux/Zustand for global user sessions or complex cross-component data."]
+- **Separation of Concerns:** Never query the database directly from route handlers or UI components. All database access goes through service functions in /src/lib/db/. Ingestion logic lives in /src/lib/ingestion/. Scripts in /scripts/ import from /src/lib/ — they never contain raw SQL or Drizzle calls directly.
+- **Directory Structure:** Reusable UI components go in /src/components/ui/. Page-specific components go in /src/app/(route)/components/. Shared utilities go in /src/lib/utils/. Ingestion workers go in /src/lib/ingestion/. Standalone scripts (for Railway cron jobs) go in /scripts/. Types shared across the app go in /src/types/.
+- **State Management:** Prefer local component state (useState, useReducer). No global state library for MVP. Server state (events, ingestion status) is fetched server-side and passed as props. Client components handle UI state only.
 
 # Naming Conventions
 - **Highly Descriptive:** Use clear, semantic names for all variables, functions, and classes (e.g., use `userAuthenticationStatus` instead of `authStat` or `status`). 
@@ -26,7 +26,7 @@ You are a senior software engineer acting as an autonomous agent on this project
 - **Booleans:** Prefix boolean variables with `is`, `has`, or `should` (e.g., `isLoading`, `hasError`).
 
 # Coding Standards & Style
-- **Type Safety:** [Insert typing rule, e.g., "Absolutely no `any` types. Define explicit interfaces for all data structures."]
+- **Type Safety:** No any types. Define explicit interfaces for all data structures in /src/types/. Use Drizzle's inferred types (InferSelectModel, InferInsertModel) for database row types rather than redefining them.
 - **Error Handling:** Wrap external calls and database queries in appropriate error handling (e.g., `try/catch` blocks). Always handle edge cases gracefully and avoid silent failures.
 - **Comments & Documentation:** Do not comment on obvious code. Use comments only to explain *why* a specific approach was taken if it is complex or non-standard.
 
@@ -74,7 +74,13 @@ This reduces the scraping problem from N custom venue scrapers to a short list o
 - Framework: Next.js (API routes + eventual consumer frontend)
 - ORM: Drizzle
 - Database: Neon Postgres with PostGIS extension
-- Deployment: Railway (backend services/scrapers) + Vercel + Vercel Cron for scheduled ingestion
+- Deployment: Railway — single platform for everything.
+            - Web service: Next.js app (always-on)
+            - Cron service: sync-ticketmaster (every 6 hours)
+            - Cron service: sync-eventbrite (every 6 hours)
+            - Cron service: scrape-dice (nightly at 2am)
+            Vercel is NOT used. All services share the same Railway project
+            and the same Neon DATABASE_URL.
 - Geocoding: Google Places API
 - Auth: simple API key lookup for B2B customers (no OAuth for MVP)
 - Email ingestion (later): Mailgun or Postmark inbound routing
@@ -114,17 +120,19 @@ Phase 1 (MVP) is complete:
 - Built a query-time cross-platform event deduplication helper that clusters identical events from multiple platforms and combines ticketing sources.
 - Built the Consumer Feed UI (`/feed`) and Event Detail view (`/feed/[id]`) with a "Compare Tickets" price/platform comparison component.
 - Shared `formatPrice` utility handling complex edge cases (free vs range vs unknown).
+- Refactored TM and Eventbrite ingestion into standalone scripts in /scripts/ callable by Railway cron services independently of the Next.js app.
+- Configured Railway deployment: web service + three cron services.
 
-Next up: Automate the ingestion pipelines via CRON jobs and begin B2B client auth/feed integration.
+Next up: Deploy to Railway. Web service live, three cron services running automatically. Then: B2B API auth layer (API key validation middleware, public /api/v1/events endpoint, rate limiting).
 
 ## What is NOT in scope yet
 
-- Consumer-facing app (partially started via EventFeed concept, but not primary focus yet)
-- Venue portal
-- Email parsing pipeline
+- Venue portal (claim listing, submit events, view analytics)
+- Email parsing pipeline (LLM-based, for long-tail venues)
 - Friend coordination / social layer
-- Multi-city expansion
+- Multi-city expansion (currently NYC only)
 - Payment/billing infrastructure
+- Resident Advisor scraper (planned for Phase 4)
 
 ## Key design decisions (from initial planning)
 
