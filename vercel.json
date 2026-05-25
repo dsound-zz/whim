@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/sync-ticketmaster",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-nyc-parks",
+      "schedule": "0 8 * * *"
     }
   ]
 }

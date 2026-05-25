@@ -25,6 +25,7 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "submission",
   "scrape",
   "ra_scrape",
+  "nyc_parks_api",
 ]);
 
 export const eventStatusEnum = pgEnum("event_status", [
