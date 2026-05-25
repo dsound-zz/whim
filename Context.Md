@@ -70,11 +70,11 @@ This reduces the scraping problem from N custom venue scrapers to a short list o
 
 ## Tech stack
 
-- Runtime: Node.js + TypeScript
+- Runtime: Node.js (>=20.0.0) + TypeScript
 - Framework: Next.js (API routes + eventual consumer frontend)
 - ORM: Drizzle
 - Database: Neon Postgres with PostGIS extension
-- Deployment: Vercel + Vercel Cron for scheduled ingestion
+- Deployment: Railway (backend services/scrapers) + Vercel + Vercel Cron for scheduled ingestion
 - Geocoding: Google Places API
 - Auth: simple API key lookup for B2B customers (no OAuth for MVP)
 - Email ingestion (later): Mailgun or Postmark inbound routing
