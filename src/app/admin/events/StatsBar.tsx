@@ -8,6 +8,7 @@ const getSourceColor = (source: string) => {
     case 'dice_scrape': return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
     case 'eventbrite_api': return 'bg-red-500/20 text-red-400 border-red-500/30';
     case 'nyc_parks_api': return 'bg-green-600/20 text-green-400 border-green-600/30';
+    case 'songkick_scrape': return 'bg-pink-500/20 text-pink-400 border-pink-500/30';
     case 'ical': return 'bg-green-500/20 text-green-400 border-green-500/30';
     case 'email': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
     default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';

@@ -9,6 +9,7 @@ const getSourceAbbr = (source: string) => {
   if (source.includes('ra_scrape')) return 'RA';
   if (source.includes('eventbrite')) return 'EB';
   if (source.includes('nyc_parks')) return 'PARKS';
+  if (source.includes('songkick')) return 'SK';
   if (source.includes('ical')) return 'ICAL';
   if (source.includes('email')) return 'EMAIL';
   return 'OTH';
@@ -20,6 +21,7 @@ const getSourceColor = (source: string) => {
   if (source.includes('ra_scrape')) return 'bg-fuchsia-900 text-fuchsia-300';
   if (source.includes('eventbrite')) return 'bg-red-900 text-red-300';
   if (source.includes('nyc_parks')) return 'bg-green-700 text-green-100';
+  if (source.includes('songkick')) return 'bg-pink-700 text-pink-100';
   return 'bg-gray-800 text-gray-300';
 };
 

@@ -13,7 +13,9 @@
     "sync:ticketmaster": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-ticketmaster.ts",
     "sync:eventbrite": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-eventbrite.ts",
     "scrape:dice": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/scrape-dice.ts",
-    "sync:nyc-parks": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-nyc-parks.ts"
+    "sync:nyc-parks": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-nyc-parks.ts",
+    "scrape:songkick": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/scrape-songkick.ts",
+    "enrich:bandsintown": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/enrich-bandsintown.ts"
   },
   "dependencies": {
     "@emnapi/core": "^1.10.0",

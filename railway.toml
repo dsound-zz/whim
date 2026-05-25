@@ -7,3 +7,13 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+
+[[services]]
+name = "scraper-songkick"
+cronSchedule = "30 2 * * *"
+command = "npm run scrape:songkick"
+
+[[services]]
+name = "enrich-bandsintown"
+cronSchedule = "0 4 * * *"
+command = "npm run enrich:bandsintown"
