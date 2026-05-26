@@ -4,7 +4,7 @@ dotenv.config();
 import { db } from '@/db';
 import { events } from '@/db/schema';
 import { eq, isNotNull, and } from 'drizzle-orm';
-import { geocodeVenueName } from '@/lib/ingestion/songkick';
+import { geocodeVenueWithMapbox as geocodeVenueName } from '@/lib/ingestion/location-validation';
 
 /**
  * Calculates distance between two coordinates in miles using the Haversine formula

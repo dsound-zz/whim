@@ -79,6 +79,34 @@ async function main(): Promise<void> {
 
     for (const rawEvent of uniqueRawEvents) {
       try {
+        // 1. Fetch JSON-LD from detail page to get exact coordinates
+        if (rawEvent.ticketUrl) {
+          try {
+            const detailUrl = rawEvent.ticketUrl.startsWith('http') ? rawEvent.ticketUrl : `https://www.songkick.com${rawEvent.ticketUrl}`;
+            const res = await fetch(detailUrl, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+            });
+            if (res.ok) {
+              const html = await res.text();
+              const matches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+              for (const match of matches) {
+                try {
+                  const data = JSON.parse(match[1]);
+                  const events = Array.isArray(data) ? data : [data];
+                  for (const ev of events) {
+                    if ((ev['@type'] === 'MusicEvent' || ev['@type'] === 'Event') && ev.location?.geo) {
+                      rawEvent.lat = Number(ev.location.geo.latitude);
+                      rawEvent.lng = Number(ev.location.geo.longitude);
+                    }
+                  }
+                } catch (e) {}
+              }
+            }
+          } catch (err) {
+            console.error(`[Songkick] Failed to fetch JSON-LD for ${rawEvent.songkickId}`, err);
+          }
+        }
+
         const normalized = await normalizeSongkickEvent(rawEvent);
         await upsertSongkickEvent(normalized);
         eventsUpserted++;

@@ -1,6 +1,7 @@
 import { db } from '@/db';
 import { events, venues } from '@/db/schema';
 import { and, eq, ilike } from 'drizzle-orm';
+import { resolveLocationData } from '@/lib/ingestion/location-validation';
 
 const DICE_NEW_YORK_URL = 'https://dice.fm/browse/new_york-5bbf4db0f06331478e9b2c59?date=this_week';
 
@@ -151,49 +152,46 @@ export async function scrapeDiceEvents() {
          }
       }
 
-      // Geocoding via Mapbox
-      let lat = null;
-      let lng = null;
+      // Geocoding & Validation Fallback
+      let lat: number | null = null;
+      let lng: number | null = null;
       let address = raw.address;
+      let isVerified = false;
 
-      if (raw.venueName && raw.venueName !== 'Unknown Venue') {
-         // 1. Check local DB for override
+      // 1. Attempt to fetch JSON-LD for exact coordinates from detail page
+      if (raw.ticketUrl) {
          try {
-           const existing = await db
-             .select()
-             .from(venues)
-             .where(ilike(venues.name, raw.venueName))
-             .limit(1);
-           
-           if (existing.length > 0 && existing[0].lat && existing[0].lng) {
-             lat = existing[0].lat;
-             lng = existing[0].lng;
-             address = existing[0].address || address;
-           }
-         } catch (err) {
-           console.error(`[Dice Geocoder] DB check failed for "${raw.venueName}":`, err);
-         }
-
-         // 2. Fallback to Mapbox if DB didn't find coordinates
-         if (!lat && process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
-             try {
-                 // Append strict NYC context
-                 const query = encodeURIComponent(`${raw.venueName}, New York City, NY, USA`);
-             const proximity = "-74.0060,40.7128"; // NYC center
-             const geoRes = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&limit=1&proximity=${proximity}`);
-             const geoData = await geoRes.json();
-             if (geoData.features && geoData.features.length > 0) {
-                 const center = geoData.features[0].center; // [lng, lat]
-                 lng = center[0];
-                 lat = center[1];
-                 address = geoData.features[0].place_name;
-             } else {
-                 console.log(`[Geocode Miss] No coordinates found for venue: ${raw.venueName}`);
-             }
-         } catch (err) {
-             console.error('Geocoding failed for', raw.venueName);
+            const res = await fetch(raw.ticketUrl, {
+               headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' }
+            });
+            if (res.ok) {
+               const html = await res.text();
+               const matches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+               for (const match of matches) {
+                  try {
+                     const data = JSON.parse(match[1]);
+                     const items = Array.isArray(data) ? data : [data];
+                     for (const item of items) {
+                        if ((item['@type'] === 'Event' || item['@type'] === 'MusicEvent') && item.location?.geo) {
+                           lat = Number(item.location.geo.latitude);
+                           lng = Number(item.location.geo.longitude);
+                        }
+                     }
+                  } catch (e) {}
+               }
+            }
+         } catch (e) {
+            console.error(`[Dice] Failed to fetch JSON-LD for ${raw.externalId}`, e);
          }
       }
+
+      // 2. Validate and fallback via Mapbox
+      if (raw.venueName && raw.venueName !== 'Unknown Venue') {
+         const addressString = address || `${raw.venueName}, New York, NY`;
+         const locationData = await resolveLocationData(raw.venueName, addressString, lat, lng);
+         lat = locationData.lat;
+         lng = locationData.lng;
+         isVerified = locationData.isVerified;
       }
 
       const eventToInsert = {
@@ -213,6 +211,7 @@ export async function scrapeDiceEvents() {
         platform: 'Dice',
         rawSource: { ...raw },
         status: 'active' as const,
+        isVerified,
       };
 
       try {

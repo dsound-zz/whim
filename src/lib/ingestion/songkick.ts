@@ -11,64 +11,11 @@ export interface RawSongkickEvent {
   venueAddress: string;    // may include city/state
   ticketUrl: string;       // relative or absolute URL
   imageUrl: string | null;
+  lat?: number | null;
+  lng?: number | null;
 }
 
-/**
- * Geocodes a venue name and query string inside NYC bounding box using Mapbox.
- */
-export async function geocodeVenueName(
-  venueName: string,
-  queryText: string
-): Promise<{ lat: number; lng: number } | null> {
-  if (!venueName || venueName === 'Unknown Venue') {
-    return null;
-  }
-
-  // 1. Check local DB for known venue override
-  try {
-    const existing = await db
-      .select()
-      .from(venues)
-      .where(ilike(venues.name, venueName))
-      .limit(1);
-      
-    if (existing.length > 0 && existing[0].lat && existing[0].lng) {
-      return { lat: existing[0].lat, lng: existing[0].lng };
-    }
-  } catch (err) {
-    console.error(`[Songkick Geocoder] DB check failed for "${venueName}":`, err);
-  }
-
-  // 2. Fallback to Mapbox
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!mapboxToken) {
-    return null;
-  }
-
-  try {
-    const query = encodeURIComponent(queryText);
-    const proximity = "-74.0060,40.7128"; // NYC center
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1&proximity=${proximity}`;
-
-    const geoRes = await fetch(url);
-    if (!geoRes.ok) {
-      console.warn(`[Songkick Geocoder] HTTP ${geoRes.status} for "${venueName}"`);
-      return null;
-    }
-    const geoData = await geoRes.json();
-
-    if (geoData.features && geoData.features.length > 0) {
-      const center = geoData.features[0].center; // [lng, lat]
-      return {
-        lng: center[0],
-        lat: center[1],
-      };
-    }
-  } catch (err) {
-    console.error(`[Songkick Geocoder] Failed for "${venueName}":`, err);
-  }
-  return null;
-}
+import { resolveLocationData } from './location-validation';
 
 /**
  * Normalizes a raw scraped Songkick event into Whim event schema shape.
@@ -89,17 +36,14 @@ export async function normalizeSongkickEvent(
   // Build a descriptive title if the raw title is just the artist name
   const title = rawEvent.title || rawEvent.artistNames.join(', ') || 'Live Event';
 
-  // Geocode venue
-  let lat: number | null = null;
-  let lng: number | null = null;
-
+  // Geocode venue with fallback
   const addressString = rawEvent.venueAddress || `${rawEvent.venueName}, New York, NY`;
-  const geocodeQuery = `${rawEvent.venueName}, ${addressString}`;
-  const geocoded = await geocodeVenueName(rawEvent.venueName, geocodeQuery);
-  if (geocoded) {
-    lat = geocoded.lat;
-    lng = geocoded.lng;
-  }
+  const locationData = await resolveLocationData(
+    rawEvent.venueName,
+    addressString,
+    rawEvent.lat,
+    rawEvent.lng
+  );
 
   return {
     externalId: rawEvent.songkickId,
@@ -114,8 +58,8 @@ export async function normalizeSongkickEvent(
     endAt: null,
     venueName: rawEvent.venueName,
     address: addressString,
-    lat,
-    lng,
+    lat: locationData.lat,
+    lng: locationData.lng,
     isFree: false,             // Songkick events are almost universally ticketed
     priceMin: null,            // Songkick doesn't expose price in listings
     priceMax: null,
@@ -123,7 +67,7 @@ export async function normalizeSongkickEvent(
     ticketUrl,
     platform: 'songkick',
     confidenceScore: 0.85,
-    isVerified: false,
+    isVerified: locationData.isVerified,
     status: 'active' as const,
     rawSource: rawEvent,
   };
@@ -153,6 +97,7 @@ export async function upsertSongkickEvent(eventToInsert: any): Promise<void> {
         ticketUrl: eventToInsert.ticketUrl,
         platform: eventToInsert.platform,
         confidenceScore: eventToInsert.confidenceScore,
+        isVerified: eventToInsert.isVerified,
         rawSource: eventToInsert.rawSource,
         updatedAt: new Date(),
       },
