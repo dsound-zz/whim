@@ -1,6 +1,6 @@
 import { db } from '@/db';
-import { events, ingestionSources } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { events, ingestionSources, venues } from '@/db/schema';
+import { and, eq, ilike } from 'drizzle-orm';
 
 export interface RawSongkickEvent {
   songkickId: string;
@@ -20,15 +20,35 @@ export async function geocodeVenueName(
   venueName: string,
   queryText: string
 ): Promise<{ lat: number; lng: number } | null> {
+  if (!venueName || venueName === 'Unknown Venue') {
+    return null;
+  }
+
+  // 1. Check local DB for known venue override
+  try {
+    const existing = await db
+      .select()
+      .from(venues)
+      .where(ilike(venues.name, venueName))
+      .limit(1);
+      
+    if (existing.length > 0 && existing[0].lat && existing[0].lng) {
+      return { lat: existing[0].lat, lng: existing[0].lng };
+    }
+  } catch (err) {
+    console.error(`[Songkick Geocoder] DB check failed for "${venueName}":`, err);
+  }
+
+  // 2. Fallback to Mapbox
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!mapboxToken || !venueName || venueName === 'Unknown Venue') {
+  if (!mapboxToken) {
     return null;
   }
 
   try {
     const query = encodeURIComponent(queryText);
-    const bbox = "-74.2591,40.4774,-73.7004,40.9162"; // NYC bounding box
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1&bbox=${bbox}`;
+    const proximity = "-74.0060,40.7128"; // NYC center
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1&proximity=${proximity}`;
 
     const geoRes = await fetch(url);
     if (!geoRes.ok) {
@@ -73,7 +93,8 @@ export async function normalizeSongkickEvent(
   let lat: number | null = null;
   let lng: number | null = null;
 
-  const geocodeQuery = `${rawEvent.venueName}, ${rawEvent.venueAddress}, New York City`;
+  const addressString = rawEvent.venueAddress || `${rawEvent.venueName}, New York, NY`;
+  const geocodeQuery = `${rawEvent.venueName}, ${addressString}`;
   const geocoded = await geocodeVenueName(rawEvent.venueName, geocodeQuery);
   if (geocoded) {
     lat = geocoded.lat;
@@ -92,7 +113,7 @@ export async function normalizeSongkickEvent(
     startAt,
     endAt: null,
     venueName: rawEvent.venueName,
-    address: rawEvent.venueAddress || `${rawEvent.venueName}, New York, NY`,
+    address: addressString,
     lat,
     lng,
     isFree: false,             // Songkick events are almost universally ticketed

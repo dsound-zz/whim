@@ -1,6 +1,6 @@
 import { db } from '@/db';
-import { events } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { events, venues } from '@/db/schema';
+import { and, eq, ilike } from 'drizzle-orm';
 
 const DICE_NEW_YORK_URL = 'https://dice.fm/browse/new_york-5bbf4db0f06331478e9b2c59?date=this_week';
 
@@ -76,20 +76,22 @@ export async function scrapeDiceEvents() {
         const rawText = (el as HTMLElement).innerText;
         const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
         
-        if (!title && lines.length > 1) {
-            title = lines[1]; // Typically 2nd line is title after Date
+        if (!title && lines.length > 0) {
+            title = lines[0]; 
         }
 
-        let dateStr = lines.length > 0 ? lines[0] : '';
+        let dateStr = lines.length > 1 ? lines[1] : '';
         let venueName = 'Unknown Venue';
         let priceStr = null;
         let address = null; // Address is rarely on the browse card, usually just venue name
         
-        for (const line of lines) {
+        // Loop from index 2 onwards since 0 is title and 1 is date
+        for (let i = 2; i < lines.length; i++) {
+           const line = lines[i];
            if (line.includes('$') || line.toLowerCase().includes('free')) {
                priceStr = line;
            } else if (line !== title && line !== dateStr) {
-               venueName = line; // Assume remaining text is the venue
+               venueName = line; 
            }
         }
 
@@ -114,12 +116,26 @@ export async function scrapeDiceEvents() {
     for (const raw of rawEvents) {
       if (raw.title === 'Unknown Event') continue;
 
-      // Since we are using ?date=this_week, we trust Dice's date filtering.
-      // We will just do a simple mock date for the MVP.
-      const startAt = new Date();
+      // Better Date Parsing
+      let startAt = new Date();
       startAt.setHours(20, 0, 0, 0); // Default to 8 PM
-      if (!raw.dateStr.toLowerCase().includes('tonight') && !raw.dateStr.toLowerCase().includes('today')) {
-         startAt.setDate(startAt.getDate() + 1); 
+      
+      const dateLower = raw.dateStr.toLowerCase();
+      
+      // Attempt to parse standard date strings (e.g. "Sat, May 24, 10:00 PM")
+      const parsedDate = new Date(raw.dateStr + (raw.dateStr.includes('202') ? '' : ` ${new Date().getFullYear()}`));
+      if (!isNaN(parsedDate.getTime())) {
+          startAt = parsedDate;
+      } else if (!dateLower.includes('tonight') && !dateLower.includes('today')) {
+          // Fallback heuristic for the "this_week" scrape
+          startAt.setDate(startAt.getDate() + 1); 
+      }
+
+      // Category Detection
+      let category = 'music';
+      const titleLower = raw.title.toLowerCase();
+      if (['club', 'dj', 'house', 'techno', 'afrobeats', 'disco', 'session'].some(k => titleLower.includes(k))) {
+          category = 'nightlife';
       }
 
       // Price Parsing
@@ -140,12 +156,31 @@ export async function scrapeDiceEvents() {
       let lng = null;
       let address = raw.address;
 
-      if (raw.venueName && raw.venueName !== 'Unknown Venue' && process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
+      if (raw.venueName && raw.venueName !== 'Unknown Venue') {
+         // 1. Check local DB for override
          try {
-             // Append strict NYC context and use bounding box to prevent UK edge cases
-             const query = encodeURIComponent(`${raw.venueName}, New York City, NY, USA`);
-             const bbox = "-74.5,40.4,-73.5,41.0"; // strict NYC bounding box
-             const geoRes = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&limit=1&bbox=${bbox}`);
+           const existing = await db
+             .select()
+             .from(venues)
+             .where(ilike(venues.name, raw.venueName))
+             .limit(1);
+           
+           if (existing.length > 0 && existing[0].lat && existing[0].lng) {
+             lat = existing[0].lat;
+             lng = existing[0].lng;
+             address = existing[0].address || address;
+           }
+         } catch (err) {
+           console.error(`[Dice Geocoder] DB check failed for "${raw.venueName}":`, err);
+         }
+
+         // 2. Fallback to Mapbox if DB didn't find coordinates
+         if (!lat && process.env.NEXT_PUBLIC_MAPBOX_TOKEN) {
+             try {
+                 // Append strict NYC context
+                 const query = encodeURIComponent(`${raw.venueName}, New York City, NY, USA`);
+             const proximity = "-74.0060,40.7128"; // NYC center
+             const geoRes = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&limit=1&proximity=${proximity}`);
              const geoData = await geoRes.json();
              if (geoData.features && geoData.features.length > 0) {
                  const center = geoData.features[0].center; // [lng, lat]
@@ -153,17 +188,19 @@ export async function scrapeDiceEvents() {
                  lat = center[1];
                  address = geoData.features[0].place_name;
              } else {
-                 console.log(`[Geocode Miss] No NYC coordinates found for venue: ${raw.venueName}`);
+                 console.log(`[Geocode Miss] No coordinates found for venue: ${raw.venueName}`);
              }
          } catch (err) {
              console.error('Geocoding failed for', raw.venueName);
          }
+      }
       }
 
       const eventToInsert = {
         externalId: raw.externalId,
         sourceType: 'dice_scrape' as const,
         title: raw.title,
+        category: category as any,
         ticketUrl: raw.ticketUrl,
         imageUrl: raw.imageUrl,
         startAt,

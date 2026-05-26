@@ -1,5 +1,5 @@
 [build]
-builder = "nixpacks"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "npm run start"
@@ -8,12 +8,10 @@ healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
-[[services]]
-name = "scraper-songkick"
-cronSchedule = "30 2 * * *"
-command = "npm run scrape:songkick"
+[cron.scrape-dice]
+schedule = "0 6 * * *"
+command = "npm run scrape:dice"
 
-[[services]]
-name = "enrich-bandsintown"
-cronSchedule = "0 4 * * *"
-command = "npm run enrich:bandsintown"
+[cron.scrape-songkick]
+schedule = "0 8 * * *"
+command = "npm run scrape:songkick"

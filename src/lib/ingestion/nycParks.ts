@@ -1,6 +1,6 @@
 import { db } from '@/db';
-import { events, ingestionSources } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { events, ingestionSources, venues } from '@/db/schema';
+import { eq, ilike } from 'drizzle-orm';
 
 export interface IngestionResult {
   eventsUpserted: number;
@@ -88,8 +88,32 @@ function shiftToUpcoming(rawDateStr: string | undefined): Date {
 }
 
 async function geocodeVenue(venueName: string, borough: string): Promise<{ lat: number; lng: number; address: string } | null> {
+  if (!venueName || venueName === 'Unknown Venue') {
+    return null;
+  }
+
+  // 1. Check local DB for known venue override
+  try {
+    const existing = await db
+      .select()
+      .from(venues)
+      .where(ilike(venues.name, venueName))
+      .limit(1);
+      
+    if (existing.length > 0 && existing[0].lat && existing[0].lng) {
+      return { 
+        lat: existing[0].lat, 
+        lng: existing[0].lng,
+        address: existing[0].address || `${venueName}, New York, NY`
+      };
+    }
+  } catch (err) {
+    console.error(`[NYC Parks Geocoder] DB check failed for "${venueName}":`, err);
+  }
+
+  // 2. Fallback to Mapbox
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!mapboxToken || !venueName || venueName === 'Unknown Venue') {
+  if (!mapboxToken) {
     return null;
   }
 
