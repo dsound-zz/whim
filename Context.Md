@@ -134,8 +134,11 @@ Phase 1 (MVP) is complete:
 - Ingesting NYC Parks events via NYC Open Data Socrata API (free, no auth, covers outdoor concerts, festivals, ranger programs, and community events that commercial platforms do not have).
 - Ingesting music venue events via Songkick Playwright scraper (NYC metro area).
 - Running Bandsintown as a post-ingestion enrichment layer to fill null imageUrl fields on music events using artist lookup by name.
+- Built the B2B API Auth layer (validating API keys and enforcing rate limits via `src/proxy.ts` middleware) and the public `/api/v1/events` endpoint (performing bounding box queries, date/category filtering, and pagination).
+- Fixed Railway deployment by adding `RUN npm run build` to the Dockerfile and compiling the Next.js app during image builds, resolving issues with missing `.next` directories.
+- Updated `src/db/index.ts` to fall back to a placeholder DATABASE_URL when the environment variable is not injected during docker compile-time.
 
-Next up: Deploy to Railway. Web service live, cron services running automatically. Then: B2B API auth layer (API key validation middleware, public /api/v1/events endpoint, rate limiting).
+Next up: Deploy latest changes to Railway. Web service live, cron services running automatically. Then: Venue portal (claim listing, submit events, view analytics).
 
 ## What is NOT in scope yet
 
