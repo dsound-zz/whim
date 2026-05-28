@@ -1,6 +1,10 @@
 import { db } from '@/db';
 import { events, ingestionSources, venues } from '@/db/schema';
 import { and, eq, ilike } from 'drizzle-orm';
+import { resolveLocationData } from './location-validation';
+import { validateEventDates } from '@/lib/utils/validateEventDates';
+import { normalizeEventTitle, isTitleJustVenueName } from '@/lib/utils/normalizeEventTitle';
+import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
 
 export interface RawSongkickEvent {
   songkickId: string;
@@ -15,26 +19,45 @@ export interface RawSongkickEvent {
   lng?: number | null;
 }
 
-import { resolveLocationData } from './location-validation';
-
 /**
  * Normalizes a raw scraped Songkick event into Whim event schema shape.
+ * Returns null if the event fails date or title validation.
  */
 export async function normalizeSongkickEvent(
   rawEvent: RawSongkickEvent
-) {
+): Promise<typeof import('@/db/schema').events.$inferInsert | null> {
   // Build full ticket URL
   const ticketUrl = rawEvent.ticketUrl.startsWith('http')
     ? rawEvent.ticketUrl
     : `https://www.songkick.com${rawEvent.ticketUrl}`;
 
   // Parse datetime — Songkick uses ISO 8601 in datetime attributes
-  const startAt = rawEvent.dateText
-    ? new Date(rawEvent.dateText)
-    : new Date();
+  const rawStartAt = rawEvent.dateText ? new Date(rawEvent.dateText) : new Date();
+
+  const dateValidation = validateEventDates(rawStartAt, null);
+  if (!dateValidation.isValid) {
+    console.warn(`[Songkick] Skipping event ${rawEvent.songkickId}: ${dateValidation.rejectionReason}`);
+    return null;
+  }
 
   // Build a descriptive title if the raw title is just the artist name
-  const title = rawEvent.title || rawEvent.artistNames.join(', ') || 'Live Event';
+  const rawTitle = rawEvent.title || rawEvent.artistNames.join(', ') || 'Live Event';
+  let normalizedTitle = normalizeEventTitle(rawTitle) ?? rawTitle;
+
+  // If the title is just the venue name, build a better one from artists
+  if (isTitleJustVenueName(normalizedTitle, rawEvent.venueName) && rawEvent.artistNames.length > 0) {
+    const artistTitle = rawEvent.artistNames.join(', ');
+    normalizedTitle = normalizeEventTitle(artistTitle) ?? artistTitle;
+  }
+
+  const category = await classifyEventCategory({
+    title: normalizedTitle,
+    description: rawEvent.artistNames.length > 1
+      ? `Featuring: ${rawEvent.artistNames.join(', ')}`
+      : null,
+    // Songkick is music-only; skip LLM — keyword scan will catch edge cases
+    skipLlmFallback: true,
+  });
 
   // Geocode venue with fallback
   const addressString = rawEvent.venueAddress || `${rawEvent.venueName}, New York, NY`;
@@ -48,14 +71,14 @@ export async function normalizeSongkickEvent(
   return {
     externalId: rawEvent.songkickId,
     sourceType: 'songkick_scrape' as const,
-    title,
+    title: normalizedTitle,
     description: rawEvent.artistNames.length > 1
       ? `Featuring: ${rawEvent.artistNames.join(', ')}`
       : null,
-    category: 'music' as const,         // Songkick is music-only
+    category,
     imageUrl: rawEvent.imageUrl,
-    startAt,
-    endAt: null,
+    startAt: rawStartAt,
+    endAt: dateValidation.sanitizedEndAt,
     venueName: rawEvent.venueName,
     address: addressString,
     lat: locationData.lat,

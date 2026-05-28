@@ -18,6 +18,8 @@
     "enrich:bandsintown": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/enrich-bandsintown.ts",
     "test:geocoding": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/smoke-test-geocoding.ts",
     "cleanup:events": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/cleanup-events.ts",
+    "expire:events": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/expire-events.ts",
+    "backfill:quality": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-quality.ts",
     "sync:all": "./scripts/sync-all.sh"
   },
   "dependencies": {

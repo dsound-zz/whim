@@ -1,6 +1,9 @@
 import { db } from '@/db';
 import { events, ingestionSources, venues } from '@/db/schema';
 import { eq, ilike } from 'drizzle-orm';
+import { validateEventDates } from '@/lib/utils/validateEventDates';
+import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
+import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
 
 export interface IngestionResult {
   eventsUpserted: number;
@@ -271,7 +274,7 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
         const imageUrl = imagesMap.get(rawEvent.event_id) ?? null;
 
         // Resolve title, venue, and url
-        const title = rawEvent.title ?? 'NYC Parks Event';
+        const rawTitle = rawEvent.title ?? 'NYC Parks Event';
         const venueName = location?.name ?? rawEvent.location_description ?? 'NYC Park';
         const ticketUrl = rawEvent.url ? `https://www.nycgovparks.org/events/${rawEvent.url}` : null;
         
@@ -305,7 +308,7 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
         // Resolve dates: if historical fallback, we shift them to the future (next 28 days)
         // so that they are active upcoming events for testing and show up in the main feed
         let startAt = parseDateTime(rawEvent.date, rawEvent.start_time);
-        let endAt = rawEvent.end_time ? parseDateTime(rawEvent.date, rawEvent.end_time) : null;
+        let endAt: Date | null = rawEvent.end_time ? parseDateTime(rawEvent.date, rawEvent.end_time) : null;
 
         if (isHistoricalFallback) {
           const shiftedDate = shiftToUpcoming(rawEvent.date);
@@ -315,8 +318,23 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
           }
         }
 
-        // Map category
-        const category = mapNYCParksCategory(rawEvent.description ?? rawEvent.snippet);
+        const dateValidation = validateEventDates(startAt, endAt);
+        if (!dateValidation.isValid) {
+          console.warn(`[NYC Parks] Skipping event ${rawEvent.event_id}: ${dateValidation.rejectionReason}`);
+          eventsSkipped++;
+          continue;
+        }
+        endAt = dateValidation.sanitizedEndAt;
+
+        // Normalize title using the shared utility
+        const title = normalizeEventTitle(rawTitle) ?? rawTitle;
+
+        // Classify category using shared classifier (rule-based; skip LLM for Parks events)
+        const category = await classifyEventCategory({
+          title,
+          description: rawEvent.description ?? rawEvent.snippet,
+          skipLlmFallback: false,
+        });
 
         const eventToInsert = {
           externalId: rawEvent.event_id,
@@ -441,16 +459,3 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
   };
 }
 
-function mapNYCParksCategory(textStr: string | undefined): "music" | "comedy" | "art" | "theater" | "food_drink" | "fitness" | "community" | "nightlife" | "family" | "sports" | "film" | "other" {
-  if (!textStr) return 'community';
-  const normalized = textStr.toLowerCase();
-  if (normalized.includes('concert') || normalized.includes('music') || normalized.includes('performance')) return 'music';
-  if (normalized.includes('fitness') || normalized.includes('yoga') || normalized.includes('sport') || normalized.includes('run') || normalized.includes('hike') || normalized.includes('bicycling')) return 'fitness';
-  if (normalized.includes('art') || normalized.includes('craft') || normalized.includes('exhibit') || normalized.includes('painting')) return 'art';
-  if (normalized.includes('film') || normalized.includes('movie') || normalized.includes('cinema')) return 'film';
-  if (normalized.includes('family') || normalized.includes('kids') || normalized.includes('children') || normalized.includes('playground')) return 'family';
-  if (normalized.includes('festival') || normalized.includes('fair') || normalized.includes('parade') || normalized.includes('market')) return 'community';
-  if (normalized.includes('comedy') || normalized.includes('stand-up')) return 'comedy';
-  if (normalized.includes('food') || normalized.includes('drink') || normalized.includes('dining')) return 'food_drink';
-  return 'community';
-}

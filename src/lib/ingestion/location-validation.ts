@@ -10,11 +10,41 @@ export const GENERIC_CENTROIDS = [
 ];
 
 /**
+ * NYC bounding box. Any geocoded coordinate outside this range is not in New York City.
+ * Format: [minLng, minLat, maxLng, maxLat] (Mapbox bbox parameter order)
+ */
+export const NYC_BOUNDING_BOX = {
+  minLat: 40.4774,
+  maxLat: 40.9176,
+  minLng: -74.2591,
+  maxLng: -73.7004,
+  mapboxParam: '-74.2591,40.4774,-73.7004,40.9176',
+};
+
+/**
+ * Returns true if the coordinate is within the NYC bounding box.
+ */
+export function isWithinNYC(lat: number, lng: number): boolean {
+  return (
+    lat >= NYC_BOUNDING_BOX.minLat &&
+    lat <= NYC_BOUNDING_BOX.maxLat &&
+    lng >= NYC_BOUNDING_BOX.minLng &&
+    lng <= NYC_BOUNDING_BOX.maxLng
+  );
+}
+
+/**
  * Checks if a given lat/lng closely matches any of the known generic centroids.
  * We use a small epsilon (e.g., 0.005) to account for floating-point or slight variations.
+ * Also rejects coordinates that fall outside the NYC bounding box.
  */
 export function isValidLocation(lat: number | null | undefined, lng: number | null | undefined): boolean {
   if (lat == null || lng == null) return false;
+
+  // Reject coordinates outside NYC entirely
+  if (!isWithinNYC(lat, lng)) {
+    return false;
+  }
 
   const EPSILON = 0.005; // ~500 meters
   for (const centroid of GENERIC_CENTROIDS) {
@@ -60,8 +90,9 @@ export async function geocodeVenueWithMapbox(
 
   try {
     const query = encodeURIComponent(queryText);
-    const proximity = "-74.0060,40.7128"; // NYC center
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1&proximity=${proximity}`;
+    const proximity = '-74.0060,40.7128'; // NYC center
+    // bbox restricts Mapbox results to NYC — prevents e.g. "Brooklyn Bowl" resolving to Las Vegas
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1&proximity=${proximity}&bbox=${NYC_BOUNDING_BOX.mapboxParam}`;
 
     const geoRes = await fetch(url);
     if (!geoRes.ok) {
@@ -72,9 +103,18 @@ export async function geocodeVenueWithMapbox(
 
     if (geoData.features && geoData.features.length > 0) {
       const center = geoData.features[0].center; // [lng, lat]
+      const resolvedLng = center[0];
+      const resolvedLat = center[1];
+
+      // Final guard: even with bbox param, double-check the result is within NYC
+      if (!isWithinNYC(resolvedLat, resolvedLng)) {
+        console.warn(`[Geocoder] Result for "${venueName}" (${resolvedLat}, ${resolvedLng}) is outside NYC bounds. Rejecting.`);
+        return null;
+      }
+
       return {
-        lng: center[0],
-        lat: center[1],
+        lng: resolvedLng,
+        lat: resolvedLat,
       };
     }
   } catch (err) {

@@ -1,6 +1,9 @@
 import { db } from '@/db';
 import { events } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { validateEventDates } from '@/lib/utils/validateEventDates';
+import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
+import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
 
 const TICKETMASTER_API_URL = 'https://app.ticketmaster.com/discovery/v2';
 
@@ -35,21 +38,45 @@ export async function ingestTicketmasterEvents(apiKey: string | undefined, city 
 }
 
 async function processTicketmasterPayload(tmEvents: any[]) {
-  const results = { inserted: 0, updated: 0, errors: 0 };
+  const results = { inserted: 0, updated: 0, errors: 0, skipped: 0 };
 
   for (const tmEvent of tmEvents) {
     try {
       const venueData = tmEvent._embedded?.venues?.[0];
       const priceData = tmEvent.priceRanges?.[0];
-      
+
+      const rawStartAt = new Date(tmEvent.dates?.start?.dateTime || tmEvent.dates?.start?.localDate);
+      const dateValidation = validateEventDates(rawStartAt, null);
+      if (!dateValidation.isValid) {
+        console.warn(`[Ticketmaster] Skipping event ${tmEvent.id}: ${dateValidation.rejectionReason}`);
+        results.skipped++;
+        continue;
+      }
+
+      const rawTitle = tmEvent.name || 'Unknown Title';
+      const normalizedTitle = normalizeEventTitle(rawTitle) ?? rawTitle;
+
+      // Ticketmaster segment = Music, Sports, Arts & Theatre, etc.
+      // genre = more specific classification within segment
+      const tmSegment = tmEvent.classifications?.[0]?.segment?.name;
+      const tmGenre = tmEvent.classifications?.[0]?.genre?.name;
+      const category = await classifyEventCategory({
+        title: normalizedTitle,
+        description: tmEvent.description || tmEvent.info,
+        platformTaxonomy: { tmSegment, tmGenre },
+      });
+
+      const eventStatus = tmEvent.dates?.status?.code === 'cancelled' ? 'cancelled' : 'active';
+
       const eventToInsert = {
         externalId: tmEvent.id,
         sourceType: 'ticketmaster_api' as const,
-        title: tmEvent.name || 'Unknown Title',
+        title: normalizedTitle,
         description: tmEvent.description || tmEvent.info || null,
+        category,
         imageUrl: tmEvent.images?.[0]?.url || null,
-        startAt: new Date(tmEvent.dates?.start?.dateTime || tmEvent.dates?.start?.localDate),
-        endAt: null, // TicketMaster often doesn't provide end time
+        startAt: rawStartAt,
+        endAt: dateValidation.sanitizedEndAt,
         venueName: venueData?.name || 'Unknown Venue',
         address: venueData ? `${venueData.address?.line1 || ''}, ${venueData.city?.name || ''}`.trim() : null,
         lat: venueData?.location?.latitude ? parseFloat(venueData.location.latitude) : null,
@@ -60,8 +87,9 @@ async function processTicketmasterPayload(tmEvents: any[]) {
         currency: priceData?.currency || null,
         ticketUrl: tmEvent.url,
         platform: 'Ticketmaster',
+        confidenceScore: 0.95,
         rawSource: tmEvent,
-        status: (tmEvent.dates?.status?.code === 'onsale' ? 'active' : (tmEvent.dates?.status?.code === 'cancelled' ? 'cancelled' : 'active')) as 'active' | 'cancelled',
+        status: eventStatus as 'active' | 'cancelled',
       };
 
       const existing = await db.select().from(events).where(
