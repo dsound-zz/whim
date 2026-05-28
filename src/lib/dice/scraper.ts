@@ -2,6 +2,15 @@ import { db } from '@/db';
 import { events, venues } from '@/db/schema';
 import { and, eq, ilike } from 'drizzle-orm';
 import { resolveLocationData } from '@/lib/ingestion/location-validation';
+import { validateEventDates } from '@/lib/utils/validateEventDates';
+import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
+import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import {
+  findCanonicalMatch,
+  mergeIntoCanonical,
+  buildInitialTicketUrls,
+  type IncomingEventForDedup,
+} from '@/lib/utils/deduplicateAtIngestion';
 
 const DICE_NEW_YORK_URL = 'https://dice.fm/browse/new_york-5bbf4db0f06331478e9b2c59?date=this_week';
 
@@ -123,23 +132,29 @@ export async function scrapeDiceEvents() {
       
       const dateLower = raw.dateStr.toLowerCase();
       
-      // Attempt to parse standard date strings (e.g. "Sat, May 24, 10:00 PM")
       const parsedDate = new Date(raw.dateStr + (raw.dateStr.includes('202') ? '' : ` ${new Date().getFullYear()}`));
       if (!isNaN(parsedDate.getTime())) {
           startAt = parsedDate;
       } else if (!dateLower.includes('tonight') && !dateLower.includes('today')) {
-          // Fallback heuristic for the "this_week" scrape
           startAt.setDate(startAt.getDate() + 1); 
       }
 
-      // Category Detection
-      let category = 'music';
-      const titleLower = raw.title.toLowerCase();
-      if (['club', 'dj', 'house', 'techno', 'afrobeats', 'disco', 'session'].some(k => titleLower.includes(k))) {
-          category = 'nightlife';
+      // Date validation
+      const dateValidation = validateEventDates(startAt, null);
+      if (!dateValidation.isValid) {
+        console.warn(`[Dice] Skipping event ${raw.externalId}: ${dateValidation.rejectionReason}`);
+        continue;
       }
 
-      // Price Parsing
+      // Title normalization
+      const normalizedTitle = normalizeEventTitle(raw.title) ?? raw.title;
+
+      // Category classification using the shared classifier
+      const category = await classifyEventCategory({
+        title: normalizedTitle,
+        description: null,
+        skipLlmFallback: false,
+      });
       let priceMin = null;
       let isFree = false;
       if (raw.priceStr) {
@@ -197,11 +212,12 @@ export async function scrapeDiceEvents() {
       const eventToInsert = {
         externalId: raw.externalId,
         sourceType: 'dice_scrape' as const,
-        title: raw.title,
+        title: normalizedTitle,
         category: category as any,
         ticketUrl: raw.ticketUrl,
         imageUrl: raw.imageUrl,
         startAt,
+        endAt: dateValidation.sanitizedEndAt,
         venueName: raw.venueName,
         address,
         lat,
@@ -209,22 +225,59 @@ export async function scrapeDiceEvents() {
         priceMin,
         isFree,
         platform: 'Dice',
+        confidenceScore: 0.7,
         rawSource: { ...raw },
         status: 'active' as const,
         isVerified,
       };
 
+      const dedupCandidate: IncomingEventForDedup = {
+        externalId: eventToInsert.externalId,
+        sourceType: eventToInsert.sourceType,
+        title: eventToInsert.title,
+        venueName: eventToInsert.venueName,
+        lat: eventToInsert.lat,
+        lng: eventToInsert.lng,
+        startAt: eventToInsert.startAt,
+        ticketUrl: eventToInsert.ticketUrl,
+        platform: eventToInsert.platform,
+        priceMin: eventToInsert.priceMin,
+        priceMax: null,
+        isFree: eventToInsert.isFree,
+      };
+
       try {
-        const existing = await db.select().from(events).where(
+        // Intra-source dedup
+        const existing = await db.select({ id: events.id }).from(events).where(
           and(eq(events.externalId, eventToInsert.externalId), eq(events.sourceType, 'dice_scrape'))
-        );
+        ).limit(1);
 
         if (existing.length > 0) {
-          await db.update(events).set(eventToInsert).where(eq(events.id, existing[0].id));
+          await db.update(events).set({
+            ...eventToInsert,
+            ticketUrls: buildInitialTicketUrls(dedupCandidate),
+          }).where(eq(events.id, existing[0].id));
           results.updated++;
         } else {
-          await db.insert(events).values(eventToInsert);
-          results.inserted++;
+          // Cross-platform dedup check
+          const dedupResult = await findCanonicalMatch(dedupCandidate);
+
+          if (dedupResult.isMatch && dedupResult.canonicalEventId) {
+            const { confidenceScore: _cs, rawSource: _rs, isVerified: _iv, ...coreFields } = eventToInsert;
+            await mergeIntoCanonical(
+              dedupResult.canonicalEventId,
+              dedupCandidate,
+              coreFields,
+              dedupResult.shouldUpdateCanonical
+            );
+            // Dice is low-trust, so merges rarely promote; just count as handled
+          } else {
+            await db.insert(events).values({
+              ...eventToInsert,
+              ticketUrls: buildInitialTicketUrls(dedupCandidate),
+            });
+            results.inserted++;
+          }
         }
       } catch (e) {
         console.error('Failed to upsert Dice event:', raw.externalId, e);

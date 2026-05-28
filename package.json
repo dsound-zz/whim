@@ -20,6 +20,7 @@
     "cleanup:events": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/cleanup-events.ts",
     "expire:events": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/expire-events.ts",
     "backfill:quality": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-quality.ts",
+    "backfill:dedup": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-dedup.ts",
     "sync:all": "./scripts/sync-all.sh"
   },
   "dependencies": {

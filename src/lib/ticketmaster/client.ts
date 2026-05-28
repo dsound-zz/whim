@@ -4,6 +4,12 @@ import { eq, and } from 'drizzle-orm';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import {
+  findCanonicalMatch,
+  mergeIntoCanonical,
+  buildInitialTicketUrls,
+  type IncomingEventForDedup,
+} from '@/lib/utils/deduplicateAtIngestion';
 
 const TICKETMASTER_API_URL = 'https://app.ticketmaster.com/discovery/v2';
 
@@ -92,16 +98,55 @@ async function processTicketmasterPayload(tmEvents: any[]) {
         status: eventStatus as 'active' | 'cancelled',
       };
 
+      const dedupCandidate: IncomingEventForDedup = {
+        externalId: eventToInsert.externalId,
+        sourceType: eventToInsert.sourceType,
+        title: eventToInsert.title,
+        venueName: eventToInsert.venueName,
+        lat: eventToInsert.lat,
+        lng: eventToInsert.lng,
+        startAt: eventToInsert.startAt,
+        ticketUrl: eventToInsert.ticketUrl,
+        platform: eventToInsert.platform,
+        priceMin: eventToInsert.priceMin,
+        priceMax: eventToInsert.priceMax,
+        isFree: eventToInsert.isFree,
+      };
+
+      // Check for existing same-source record (intra-source dedup)
       const existing = await db.select().from(events).where(
         and(eq(events.externalId, eventToInsert.externalId), eq(events.sourceType, 'ticketmaster_api'))
       );
 
       if (existing.length > 0) {
-        await db.update(events).set(eventToInsert).where(eq(events.id, existing[0].id));
+        // Update the existing same-source record
+        await db.update(events).set({
+          ...eventToInsert,
+          ticketUrls: buildInitialTicketUrls(dedupCandidate),
+        }).where(eq(events.id, existing[0].id));
         results.updated++;
       } else {
-        await db.insert(events).values(eventToInsert);
-        results.inserted++;
+        // Cross-platform dedup check before inserting
+        const dedupResult = await findCanonicalMatch(dedupCandidate);
+
+        if (dedupResult.isMatch && dedupResult.canonicalEventId) {
+          // A canonical row already exists — merge this source into it
+          const { confidenceScore: _cs, rawSource: _rs, ...coreFields } = eventToInsert;
+          await mergeIntoCanonical(
+            dedupResult.canonicalEventId,
+            dedupCandidate,
+            coreFields,
+            dedupResult.shouldUpdateCanonical
+          );
+          results.skipped++;
+        } else {
+          // No canonical found — this is a new event; initialize its ticketUrls
+          await db.insert(events).values({
+            ...eventToInsert,
+            ticketUrls: buildInitialTicketUrls(dedupCandidate),
+          });
+          results.inserted++;
+        }
       }
     } catch (e) {
       console.error('Failed to process Ticketmaster event:', tmEvent.id, e);

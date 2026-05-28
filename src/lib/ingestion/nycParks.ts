@@ -4,6 +4,12 @@ import { eq, ilike } from 'drizzle-orm';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import {
+  findCanonicalMatch,
+  mergeIntoCanonical,
+  buildInitialTicketUrls,
+  type IncomingEventForDedup,
+} from '@/lib/utils/deduplicateAtIngestion';
 
 export interface IngestionResult {
   eventsUpserted: number;
@@ -361,30 +367,94 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
           rawSource: { ...rawEvent, _location: location },
         };
 
-        // Upsert into db
-        await db
-          .insert(events)
-          .values(eventToInsert)
-          .onConflictDoUpdate({
-            target: [events.externalId, events.sourceType],
-            set: {
-              title: eventToInsert.title,
-              description: eventToInsert.description,
-              category: eventToInsert.category,
-              startAt: eventToInsert.startAt,
-              endAt: eventToInsert.endAt,
-              imageUrl: eventToInsert.imageUrl,
-              venueName: eventToInsert.venueName,
-              address: eventToInsert.address,
-              lat: eventToInsert.lat,
-              lng: eventToInsert.lng,
-              isFree: eventToInsert.isFree,
-              priceMin: eventToInsert.priceMin,
-              ticketUrl: eventToInsert.ticketUrl,
-              status: eventToInsert.status,
-              updatedAt: new Date(),
-            },
-          });
+        const dedupCandidate: IncomingEventForDedup = {
+          externalId: eventToInsert.externalId,
+          sourceType: eventToInsert.sourceType,
+          title: eventToInsert.title,
+          venueName: eventToInsert.venueName,
+          lat: eventToInsert.lat,
+          lng: eventToInsert.lng,
+          startAt: eventToInsert.startAt,
+          ticketUrl: eventToInsert.ticketUrl,
+          platform: eventToInsert.platform,
+          priceMin: eventToInsert.priceMin,
+          priceMax: eventToInsert.priceMax,
+          isFree: eventToInsert.isFree,
+        };
+
+        // Upsert using onConflict for same-source; dedup check for new events
+        const existingRow = await db
+          .select({ id: events.id })
+          .from(events)
+          .where(
+            // NYC Parks events don't have a simple externalId unique key issue,
+            // but we use onConflict to handle re-syncs of the same event_id
+            eq(events.externalId, eventToInsert.externalId)
+          )
+          .limit(1);
+
+        if (existingRow.length > 0) {
+          await db
+            .insert(events)
+            .values({ ...eventToInsert, ticketUrls: buildInitialTicketUrls(dedupCandidate) })
+            .onConflictDoUpdate({
+              target: [events.externalId, events.sourceType],
+              set: {
+                title: eventToInsert.title,
+                description: eventToInsert.description,
+                category: eventToInsert.category,
+                startAt: eventToInsert.startAt,
+                endAt: eventToInsert.endAt,
+                imageUrl: eventToInsert.imageUrl,
+                venueName: eventToInsert.venueName,
+                address: eventToInsert.address,
+                lat: eventToInsert.lat,
+                lng: eventToInsert.lng,
+                isFree: eventToInsert.isFree,
+                priceMin: eventToInsert.priceMin,
+                ticketUrl: eventToInsert.ticketUrl,
+                status: eventToInsert.status,
+                updatedAt: new Date(),
+              },
+            });
+        } else {
+          // Cross-platform dedup check for new events
+          const dedupResult = await findCanonicalMatch(dedupCandidate);
+
+          if (dedupResult.isMatch && dedupResult.canonicalEventId) {
+            const { confidenceScore: _cs, rawSource: _rs, isVerified: _iv, ...coreFields } = eventToInsert;
+            await mergeIntoCanonical(
+              dedupResult.canonicalEventId,
+              dedupCandidate,
+              coreFields,
+              dedupResult.shouldUpdateCanonical
+            );
+          } else {
+            await db
+              .insert(events)
+              .values({ ...eventToInsert, ticketUrls: buildInitialTicketUrls(dedupCandidate) })
+              .onConflictDoUpdate({
+                target: [events.externalId, events.sourceType],
+                set: {
+                  title: eventToInsert.title,
+                  description: eventToInsert.description,
+                  category: eventToInsert.category,
+                  startAt: eventToInsert.startAt,
+                  endAt: eventToInsert.endAt,
+                  imageUrl: eventToInsert.imageUrl,
+                  venueName: eventToInsert.venueName,
+                  address: eventToInsert.address,
+                  lat: eventToInsert.lat,
+                  lng: eventToInsert.lng,
+                  isFree: eventToInsert.isFree,
+                  priceMin: eventToInsert.priceMin,
+                  ticketUrl: eventToInsert.ticketUrl,
+                  status: eventToInsert.status,
+                  updatedAt: new Date(),
+                },
+              });
+          }
+        }
 
         eventsUpserted++;
       } catch (err) {

@@ -1,6 +1,15 @@
 import { db } from '@/db';
 import { events, venues } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { validateEventDates } from '@/lib/utils/validateEventDates';
+import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
+import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import {
+  findCanonicalMatch,
+  mergeIntoCanonical,
+  buildInitialTicketUrls,
+  type IncomingEventForDedup,
+} from '@/lib/utils/deduplicateAtIngestion';
 
 const EVENTBRITE_API_URL = 'https://www.eventbriteapi.com/v3';
 
@@ -38,44 +47,101 @@ export async function ingestEventbriteEvents(apiKey: string | undefined, city = 
 }
 
 async function processEventbritePayload(eventbriteEvents: any[]) {
-  const results = { inserted: 0, updated: 0, errors: 0 };
+  const results = { inserted: 0, updated: 0, errors: 0, skipped: 0 };
 
   for (const ebEvent of eventbriteEvents) {
     try {
-      // Create or update venue (mocking venue id mapping for now)
-      // In production we'd look up googlePlaceId
       const venueData = ebEvent.venue;
-      
+
+      const rawStartAt = new Date(ebEvent.start.utc);
+      const rawEndAt = new Date(ebEvent.end.utc);
+      const dateValidation = validateEventDates(rawStartAt, rawEndAt);
+      if (!dateValidation.isValid) {
+        console.warn(`[Eventbrite] Skipping event ${ebEvent.id}: ${dateValidation.rejectionReason}`);
+        results.skipped++;
+        continue;
+      }
+
+      const rawTitle = ebEvent.name?.text || 'Unknown Title';
+      const normalizedTitle = normalizeEventTitle(rawTitle) ?? rawTitle;
+
+      const ebriteCategory = ebEvent.category?.name;
+      const ebriteFormat = ebEvent.format?.name;
+      const category = await classifyEventCategory({
+        title: normalizedTitle,
+        description: ebEvent.description?.text,
+        platformTaxonomy: { ebriteCategory, ebriteFormat },
+      });
+
       const eventToInsert = {
         externalId: ebEvent.id,
         sourceType: 'eventbrite_api' as const,
-        title: ebEvent.name?.text || 'Unknown Title',
-        description: ebEvent.description?.text,
-        imageUrl: ebEvent.logo?.url,
-        startAt: new Date(ebEvent.start.utc),
-        endAt: new Date(ebEvent.end.utc),
+        title: normalizedTitle,
+        description: ebEvent.description?.text ?? null,
+        category,
+        imageUrl: ebEvent.logo?.url ?? null,
+        startAt: rawStartAt,
+        endAt: dateValidation.sanitizedEndAt,
         venueName: venueData?.name || 'Unknown Venue',
         address: venueData?.address?.localized_address_display || null,
         lat: venueData?.address?.latitude ? parseFloat(venueData.address.latitude) : null,
         lng: venueData?.address?.longitude ? parseFloat(venueData.address.longitude) : null,
         isFree: ebEvent.is_free,
+        priceMin: null as number | null,
+        priceMax: null as number | null,
         ticketUrl: ebEvent.url,
         platform: 'Eventbrite',
+        confidenceScore: 0.9,
         rawSource: ebEvent,
         status: (ebEvent.status === 'live' ? 'active' : 'cancelled') as 'active' | 'cancelled',
       };
 
-      // Upsert logic (simple for MVP)
+      const dedupCandidate: IncomingEventForDedup = {
+        externalId: eventToInsert.externalId,
+        sourceType: eventToInsert.sourceType,
+        title: eventToInsert.title,
+        venueName: eventToInsert.venueName,
+        lat: eventToInsert.lat,
+        lng: eventToInsert.lng,
+        startAt: eventToInsert.startAt,
+        ticketUrl: eventToInsert.ticketUrl,
+        platform: eventToInsert.platform,
+        priceMin: eventToInsert.priceMin,
+        priceMax: eventToInsert.priceMax,
+        isFree: eventToInsert.isFree,
+      };
+
+      // Intra-source dedup
       const existing = await db.select().from(events).where(
         and(eq(events.externalId, eventToInsert.externalId), eq(events.sourceType, 'eventbrite_api'))
       );
 
       if (existing.length > 0) {
-        await db.update(events).set(eventToInsert).where(eq(events.id, existing[0].id));
+        await db.update(events).set({
+          ...eventToInsert,
+          ticketUrls: buildInitialTicketUrls(dedupCandidate),
+        }).where(eq(events.id, existing[0].id));
         results.updated++;
       } else {
-        await db.insert(events).values(eventToInsert);
-        results.inserted++;
+        // Cross-platform dedup check
+        const dedupResult = await findCanonicalMatch(dedupCandidate);
+
+        if (dedupResult.isMatch && dedupResult.canonicalEventId) {
+          const { confidenceScore: _cs, rawSource: _rs, ...coreFields } = eventToInsert;
+          await mergeIntoCanonical(
+            dedupResult.canonicalEventId,
+            dedupCandidate,
+            coreFields,
+            dedupResult.shouldUpdateCanonical
+          );
+          results.skipped++;
+        } else {
+          await db.insert(events).values({
+            ...eventToInsert,
+            ticketUrls: buildInitialTicketUrls(dedupCandidate),
+          });
+          results.inserted++;
+        }
       }
     } catch (e) {
       console.error('Failed to process event:', ebEvent.id, e);

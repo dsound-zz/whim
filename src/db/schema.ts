@@ -117,7 +117,13 @@ export const events = pgTable(
 
     // Ticketing
     ticketUrl: text("ticket_url"),
+    // All ticket sources merged into this canonical event.
+    // Shape: Array<{ platform: string; url: string | null; priceMin: number | null; priceMax: number | null; isFree: boolean }>
+    ticketUrls: jsonb("ticket_urls").default([]),
     platform: text("platform"), // eventbrite, dice, ticketmaster, etc.
+    // Tracks which (externalId, sourceType) pairs were merged into this canonical row.
+    // Shape: Array<{ externalId: string; sourceType: string; platform: string }>
+    mergedSourceIds: jsonb("merged_source_ids").default([]),
 
     // Data quality
     confidenceScore: doublePrecision("confidence_score").default(1.0),
