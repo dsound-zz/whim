@@ -1,6 +1,7 @@
 import { db } from '@/db';
 import { events } from '@/db/schema';
-import { and, eq, isNull, gt } from 'drizzle-orm';
+import { and, eq, isNull, gt, isNotNull } from 'drizzle-orm';
+import { validateImageUrl } from '@/lib/utils/validateImageUrl';
 
 export interface IngestionResult {
   eventsUpserted: number;
@@ -76,6 +77,45 @@ export async function runBandsintownEnrichment(): Promise<IngestionResult> {
   let errors = 0;
 
   try {
+    // ── Step 1: Validate existing imageUrls ──────────────────────────────────
+    // Find active future events that have an imageUrl — check if it actually resolves.
+    // If the URL is dead, null it out so Bandsintown can backfill it.
+    const eventsWithImages = await db
+      .select({ id: events.id, imageUrl: events.imageUrl })
+      .from(events)
+      .where(
+        and(
+          isNotNull(events.imageUrl),
+          eq(events.status, 'active'),
+          gt(events.startAt, new Date())
+        )
+      )
+      .limit(200);
+
+    console.log(`[Bandsintown] Validating ${eventsWithImages.length} existing image URLs...`);
+    let imagesInvalidated = 0;
+
+    for (const event of eventsWithImages) {
+      if (!event.imageUrl) continue;
+
+      const validation = await validateImageUrl(event.imageUrl);
+
+      if (!validation.isValid && !validation.wasTrusted) {
+        await db
+          .update(events)
+          .set({ imageUrl: null, updatedAt: new Date() })
+          .where(eq(events.id, event.id));
+        imagesInvalidated++;
+        console.log(`[Bandsintown] Nulled invalid imageUrl for event ${event.id}: ${validation.error ?? `HTTP ${validation.httpStatus}`}`);
+      }
+
+      // Throttle: avoid hammering the remote servers
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    console.log(`[Bandsintown] Image validation complete. Invalidated: ${imagesInvalidated}`);
+
+    // ── Step 2: Enrich null imageUrls via Bandsintown ────────────────────────
     // Find active music events starting in the future that have a null imageUrl
     const eventsNeedingEnrichment = await db
       .select({
