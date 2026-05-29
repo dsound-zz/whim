@@ -47,6 +47,18 @@ const overrides = [
     address: '217 E Houston St, New York, NY 10002',
     lat: 40.7222,
     lng: -73.9867,
+  },
+  {
+    name: 'Gold Sounds',
+    address: '44 Wilson Ave, 11237, Brooklyn, NY, US',
+    lat: 40.7028,
+    lng: -73.9248,
+  },
+  {
+    name: 'The Broadway',
+    address: '1272 Broadway, 11221, Brooklyn, NY, US',
+    lat: 40.6910,
+    lng: -73.9248,
   }
 ];
 

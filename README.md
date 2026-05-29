@@ -20,6 +20,22 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Venue Overrides & Geocoding
+
+The application uses manual venue geocoding overrides for edge cases where automated geocoding fails or returns inaccurate coordinates (stored in the `venues` table).
+
+To update or seed these venue overrides in the database:
+
+1. Add the venue details (name, address, latitude, and longitude) to the `overrides` array in `scripts/seed-venues.ts`.
+2. Seed the database with the updated overrides:
+   ```bash
+   npm run db:seed-venues
+   ```
+3. Sync existing events in the database with the updated coordinates:
+   ```bash
+   npm run db:sync-events
+   ```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

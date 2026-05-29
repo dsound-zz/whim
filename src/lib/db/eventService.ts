@@ -47,3 +47,14 @@ export async function fetchEventsNearLocation(params: FetchEventsParams) {
     total,
   };
 }
+
+export async function updateEventStatus(
+  id: string,
+  status: 'active' | 'cancelled' | 'expired' | 'draft'
+): Promise<void> {
+  await db
+    .update(events)
+    .set({ status, updatedAt: new Date() })
+    .where(eq(events.id, id));
+}
+

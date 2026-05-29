@@ -30,6 +30,43 @@ You are a senior software engineer acting as an autonomous agent on this project
 - **Error Handling:** Wrap external calls and database queries in appropriate error handling (e.g., `try/catch` blocks). Always handle edge cases gracefully and avoid silent failures.
 - **Comments & Documentation:** Do not comment on obvious code. Use comments only to explain *why* a specific approach was taken if it is complex or non-standard.
 
+# Troubleshooting & Maintenance
+
+## Seeding & Syncing Venue Overrides
+If a venue's coordinates are geocoded incorrectly (e.g., Mapbox fails or a scraper returns generic/inaccurate coordinates), you can define a manual override:
+1. Add the venue name, correct address, and coordinates (lat/lng) to the `overrides` array in `scripts/seed-venues.ts`.
+2. Seed the database with the updated overrides:
+   ```bash
+   npm run db:seed-venues
+   ```
+3. Sync existing events in the database with the updated coordinates:
+   ```bash
+   npm run db:sync-events
+   ```
+
+*Note:* Seeding the database updates the `venues` table so future events are geocoded correctly. Syncing updates the `events` table (which denormalizes location) so currently imported events are corrected.
+
+## Running the Event Integrity Smoke Test
+The integrity check fetches each event's `ticketUrl` and re-geocodes its venue to catch stale links and coordinate drift.
+
+Run manually against a small batch:
+```bash
+npm run verify:integrity -- --limit 10
+```
+
+Run against a specific ingestion source only:
+```bash
+npm run verify:integrity -- --limit 50 --source nyc_parks_api
+```
+
+View results in the admin dashboard at `/admin/verification`.
+
+Key thresholds:
+- Coordinate flag: **> 500 meters** between stored coords and Mapbox re-geocode
+- LLM model: `gemini-2.5-flash` with `temperature: 0` and JSON mode
+- JS-heavy domains (`dice.fm`) are skipped in the content check (no Playwright in smoke-test path)
+- Page text is capped at 8,000 characters before being sent to the LLM; 5,000 characters are stored in `pageTextSnippet` for debugging
+
 # Whim — Project Prompt for Antigravity
 
 ## What Whim is
@@ -89,12 +126,14 @@ This reduces the scraping problem from N custom venue scrapers to a short list o
             - Cron service: sync-eventbrite (every 6 hours, Railway)
             - Cron service: scrape-dice (nightly at 2am, Railway)
             - Cron service: sync-nyc-parks (daily at 8am, runs on Vercel Cron not Railway since it requires no headless browser)
+            - Cron service: run-integrity-check (nightly, Railway) — event integrity smoke test
             All services share the same Neon DATABASE_URL.
-- Geocoding: Google Places API
+- Geocoding: Mapbox Geocoding API (NYC bounding-box restricted)
 - Auth: simple API key lookup for B2B customers (no OAuth for MVP)
+- LLM: Google Gemini API (gemini-2.5-flash, JSON mode) — used for event content verification
 - Email ingestion (later): Mailgun or Postmark inbound routing
 
-## Database schema (4 tables)
+## Database schema (5 tables)
 
 ### venues
 Discovered via Google Places or extracted from platform APIs. Canonical location data. Fields: id, name, address, lat, lng, websiteUrl, googlePlaceId, claimed, createdAt, updatedAt. Indexed on (lat, lng) and unique on googlePlaceId.
@@ -107,6 +146,9 @@ Tracks how each venue's events are fetched. The worker scheduler reads this tabl
 
 ### apiKeys
 B2B customer auth. Fields: id, key, customerName, customerEmail, tier (free/starter/pro), callsToday, callLimit, isActive, createdAt.
+
+### eventVerificationLogs
+Stores the result of each event integrity smoke test. One row per event (upserted on eventId — always reflects the most recent check). Fields: id, eventId (FK → events, cascade delete), checkedAt, status (verified/flagged_content/flagged_coordinates/flagged_both/skipped/error), pageTextSnippet (first 5k chars of fetched page for debugging), llmConfirmed (bool), llmReason (text), storedLat, storedLng, mapboxLat, mapboxLng, coordDeltaMeters, mismatchReason, errorMessage. Unique index on eventId; indexes on checkedAt and status.
 
 ## Architecture (4-stage pipeline)
 
@@ -138,11 +180,22 @@ Phase 1 (MVP) is complete:
 - Fixed Railway deployment by adding `RUN npm run build` to the Dockerfile and compiling the Next.js app during image builds, resolving issues with missing `.next` directories.
 - Updated `src/db/index.ts` to fall back to a placeholder DATABASE_URL when the environment variable is not injected during docker compile-time.
 
-Next up: Deploy latest changes to Railway. Web service live, cron services running automatically. Then: Venue portal (claim listing, submit events, view analytics).
+Phase 2 — Data Integrity layer (complete 2026-05-29):
+- Built `verifyEventIntegrity()` service (`src/lib/verification/verifyEventIntegrity.ts`) that runs two checks:
+  1. **Content check**: fetches the event's `ticketUrl`, strips HTML, and sends page text to Gemini 2.5 Flash in JSON mode (enforced with native `systemInstruction` and `responseSchema` constrained decoding to prevent raw text parse errors). JS-heavy domains (dice.fm) are gracefully skipped.
+  2. **Coordinate check**: re-geocodes the venue via Mapbox (NYC bounding box) and computes Haversine distance in meters between stored coords and freshly-returned ones. Flags mismatches > 500m. Bypassed entirely when content check is skipped/un-scrapeable (e.g. Songkick, Ticketmaster), resolving false-positive geocoding drifts.
+- Added graceful handling of hard HTTP 404s (during fetch phase) and soft 404s (redirects to generic daily calendars where the LLM disconfirms the event/venue), automatically marking affected events as `expired` in the DB via the new `updateEventStatus()` service in `src/lib/db/eventService.ts`.
+- Added `event_verification_logs` table (5th table in schema) with `verificationStatusEnum` (verified/flagged_content/flagged_coordinates/flagged_both/skipped/error). Upserts on `eventId` so each event always has exactly one latest result. Live in Neon.
+- Built `verificationService.ts` DB service (`src/lib/db/`) with `saveVerificationLog`, `fetchVerificationLogs`, `fetchVerificationStats`, and `fetchVerificationLogForEvent`.
+- Added `scripts/run-integrity-check.ts` standalone cron script supporting `--limit N` and `--source <sourceType>` flags. Runs with `npm run verify:integrity`.
+- Built `/admin/verification` admin dashboard: stats bar (counts by status), filterable log table with click-to-expand rows (shows LLM reason, coord delta, ticket URL, error details), and a manual run panel with source/limit selectors and inline result summary.
+- Implemented ref-based state tracking and programmatic popup removal flags in `/admin/events` Mapbox component (`MapPanel.tsx`) to prevent race conditions and support direct event-to-event flight transitions without forced zoom-outs.
+
+Next up: Venue portal (claim listing, submit events, view analytics). Then: Deploy integrity check as Railway cron (nightly).
 
 ## What is NOT in scope yet
 
-- Venue portal (claim listing, submit events, view analytics)
+- Venue portal (claim listing, submit events, view analytics) — **next priority**
 - Email parsing pipeline (LLM-based, for long-tail venues)
 - Friend coordination / social layer
 - Multi-city expansion (currently NYC only)

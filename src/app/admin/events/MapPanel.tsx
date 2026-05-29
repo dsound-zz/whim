@@ -31,6 +31,13 @@ export default function MapPanel({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const activePopup = useRef<mapboxgl.Popup | null>(null);
+  const selectedEventIdRef = useRef(selectedEventId);
+  const isProgrammaticRemove = useRef(false);
+
+  // Sync selectedEventIdRef whenever selectedEventId changes
+  useEffect(() => {
+    selectedEventIdRef.current = selectedEventId;
+  }, [selectedEventId]);
 
   // Initialize Map Once
   useEffect(() => {
@@ -102,7 +109,7 @@ export default function MapPanel({
         if (!e.features || e.features.length === 0) return;
         const feature = e.features[0];
         const props = feature.properties as any;
-        onMarkerClick(props.id === selectedEventId ? null : props.id);
+        onMarkerClick(props.id === selectedEventIdRef.current ? null : props.id);
       });
 
       currentMap.on("mouseenter", "unclustered-point", () => {
@@ -162,10 +169,12 @@ export default function MapPanel({
     if (!map.current) return;
 
     if (!selectedEventId) {
+      isProgrammaticRemove.current = true;
       if (activePopup.current) {
         activePopup.current.remove();
         activePopup.current = null;
       }
+      isProgrammaticRemove.current = false;
       // Fly back to overview
       map.current.flyTo({
         center: [-74.0060, 40.7128],
@@ -187,9 +196,11 @@ export default function MapPanel({
         speed: 1.2
       });
 
+      isProgrammaticRemove.current = true;
       if (activePopup.current) {
         activePopup.current.remove();
       }
+      isProgrammaticRemove.current = false;
 
       const dateStr = new Date(event.startAt).toLocaleString("en-US", {
           weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
@@ -214,7 +225,9 @@ export default function MapPanel({
         .addTo(map.current);
 
       activePopup.current.on('close', () => {
-         onMarkerClick(null);
+         if (!isProgrammaticRemove.current) {
+           onMarkerClick(null);
+         }
       });
     }
   }, [selectedEventId, events, onMarkerClick]);

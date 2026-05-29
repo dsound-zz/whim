@@ -9,6 +9,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  integer,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────
@@ -205,4 +206,71 @@ export const apiKeys = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [uniqueIndex("api_keys_key_idx").on(table.key)]
+);
+
+// ─── Verification status ─────────────────────────────────
+// Represents the outcome of a single event integrity check.
+
+export const verificationStatusEnum = pgEnum("verification_status", [
+  "verified",         // Content confirmed + coordinates match
+  "flagged_content",  // LLM could not confirm event on the linked page
+  "flagged_coordinates", // Coord delta exceeds threshold vs Mapbox re-lookup
+  "flagged_both",     // Both content and coordinates failed
+  "skipped",          // No ticketUrl and no geocodable address — nothing to check
+  "error",            // Unhandled exception during the check
+]);
+
+// ─── Event verification logs ─────────────────────────────
+// One row per event per check run (upserted on eventId so we
+// always keep the most recent result). Stores enough context
+// to diagnose failures without re-running the check.
+
+export const eventVerificationLogs = pgTable(
+  "event_verification_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    // Which event was checked
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+
+    // When this check ran
+    checkedAt: timestamp("checked_at").defaultNow().notNull(),
+
+    // Overall verdict
+    status: verificationStatusEnum("status").notNull(),
+
+    // ── Content check ─────────────────────────────────────
+    // First 5 000 chars of fetched page text, for debugging.
+    pageTextSnippet: text("page_text_snippet"),
+    // Did the LLM confirm the event is live on the expected date?
+    llmConfirmed: boolean("llm_confirmed"),
+    // The LLM's plain-English explanation of its verdict.
+    llmReason: text("llm_reason"),
+
+    // ── Coordinate check ──────────────────────────────────
+    // Coordinates stored in our DB at the time of the check.
+    storedLat: doublePrecision("stored_lat"),
+    storedLng: doublePrecision("stored_lng"),
+    // Coordinates returned by a fresh Mapbox geocode lookup.
+    mapboxLat: doublePrecision("mapbox_lat"),
+    mapboxLng: doublePrecision("mapbox_lng"),
+    // Haversine distance between stored and Mapbox coords, in meters.
+    coordDeltaMeters: doublePrecision("coord_delta_meters"),
+
+    // ── Summary ───────────────────────────────────────────
+    // Human-readable description of what failed (if anything).
+    mismatchReason: text("mismatch_reason"),
+    // Populated only when status = 'error'.
+    errorMessage: text("error_message"),
+  },
+  (table) => [
+    // One latest result per event (upsert key)
+    uniqueIndex("evl_event_id_idx").on(table.eventId),
+    // For dashboard queries sorted by most-recent check
+    index("evl_checked_at_idx").on(table.checkedAt),
+    // For filtering by outcome
+    index("evl_status_idx").on(table.status),
+  ]
 );
