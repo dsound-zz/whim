@@ -108,10 +108,12 @@ async function main(): Promise<void> {
         }
 
         const normalized = await normalizeSongkickEvent(rawEvent);
-        await upsertSongkickEvent(normalized);
-        eventsUpserted++;
-        if (eventsUpserted % 20 === 0) {
-          console.log(`[Songkick] Ingestion progress: ${eventsUpserted}/${uniqueRawEvents.length} events upserted`);
+        if (normalized) {
+          await upsertSongkickEvent(normalized);
+          eventsUpserted++;
+          if (eventsUpserted % 20 === 0) {
+            console.log(`[Songkick] Ingestion progress: ${eventsUpserted}/${uniqueRawEvents.length} events upserted`);
+          }
         }
       } catch (error) {
         console.error(`[Songkick] Failed to upsert event ${rawEvent.songkickId}:`, error);

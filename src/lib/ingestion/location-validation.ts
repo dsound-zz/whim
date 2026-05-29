@@ -189,17 +189,27 @@ export async function resolveLocationData(
 
   if (fallbackGeo) {
     const isFallbackValid = isValidLocation(fallbackGeo.lat, fallbackGeo.lng);
+    if (isFallbackValid) {
+      return {
+        lat: fallbackGeo.lat,
+        lng: fallbackGeo.lng,
+        isVerified: true
+      };
+    }
+  }
+
+  // If fallback fails/returns generic, but initial coordinates were valid, use them (unverified)
+  if (isInitialValid && initialLat != null && initialLng != null) {
     return {
-      lat: fallbackGeo.lat,
-      lng: fallbackGeo.lng,
-      isVerified: isFallbackValid
+      lat: initialLat,
+      lng: initialLng,
+      isVerified: false
     };
   }
 
-  // If fallback also fails, return the initial ones but marked as unverified
   return {
-    lat: initialLat ?? null,
-    lng: initialLng ?? null,
+    lat: null,
+    lng: null,
     isVerified: false
   };
 }
