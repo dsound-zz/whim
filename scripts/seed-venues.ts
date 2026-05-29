@@ -335,6 +335,12 @@ const overrides = [
     address: '2124 Broadway, New York, NY 10023',
     lat: 40.7803,
     lng: -73.9813,
+  },
+  {
+    name: 'TV Eye',
+    address: '1647 Weirfield St, Ridgewood, NY 11385',
+    lat: 40.6979,
+    lng: -73.9052,
   }
 ];
 
