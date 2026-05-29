@@ -191,6 +191,10 @@ Phase 2 — Data Integrity layer (complete 2026-05-29):
 - Built `/admin/verification` admin dashboard: stats bar (counts by status), filterable log table with click-to-expand rows (shows LLM reason, coord delta, ticket URL, error details), and a manual run panel with source/limit selectors and inline result summary.
 - Implemented ref-based state tracking and programmatic popup removal flags in `/admin/events` Mapbox component (`MapPanel.tsx`) to prevent race conditions and support direct event-to-event flight transitions without forced zoom-outs.
 - Updated the ingestion pipeline's `resolveLocationData()` in `src/lib/ingestion/location-validation.ts` to automatically detect generic or incomplete addresses (lacking street numbers or matching city centroids like "Brooklyn, NY") and fallback-geocode them using the venue name concatenated with the city.
+- Enhanced `resolveLocationData()` to discard generic fallback centroids (e.g., Payne/East NY, Generic NYC, Generic Brooklyn) and return `null` coordinates instead of writing incorrect coordinates to the database.
+- Fixed a bug in `scripts/scrape-songkick.ts` that caused ingestion runtime errors when attempting to upsert skipped events (due to date validation failures).
+- Expanded manual overrides in `scripts/seed-venues.ts` with coordinates for 25+ major NYC venues (e.g. Blue Note, Webster Hall, Le Poisson Rouge, Brooklyn Paramount) to completely bypass geocoding issues and prevent generic centroid mappings.
+- Backfilled the existing database using `npm run db:seed-venues` and `npm run db:sync-events`, successfully reducing the count of events mapped to generic centroids from **78** to **0**.
 
 Next up: Venue portal (claim listing, submit events, view analytics). Then: Deploy integrity check as Railway cron (nightly).
 
