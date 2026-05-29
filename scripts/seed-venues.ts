@@ -329,6 +329,12 @@ const overrides = [
     address: '25 W 28th St, New York, NY 10001',
     lat: 40.7455,
     lng: -73.9889,
+  },
+  {
+    name: 'Beacon Theatre',
+    address: '2124 Broadway, New York, NY 10023',
+    lat: 40.7803,
+    lng: -73.9813,
   }
 ];
 
