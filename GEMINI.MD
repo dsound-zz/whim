@@ -190,6 +190,7 @@ Phase 2 — Data Integrity layer (complete 2026-05-29):
 - Added `scripts/run-integrity-check.ts` standalone cron script supporting `--limit N` and `--source <sourceType>` flags. Runs with `npm run verify:integrity`.
 - Built `/admin/verification` admin dashboard: stats bar (counts by status), filterable log table with click-to-expand rows (shows LLM reason, coord delta, ticket URL, error details), and a manual run panel with source/limit selectors and inline result summary.
 - Implemented ref-based state tracking and programmatic popup removal flags in `/admin/events` Mapbox component (`MapPanel.tsx`) to prevent race conditions and support direct event-to-event flight transitions without forced zoom-outs.
+- Updated the ingestion pipeline's `resolveLocationData()` in `src/lib/ingestion/location-validation.ts` to automatically detect generic or incomplete addresses (lacking street numbers or matching city centroids like "Brooklyn, NY") and fallback-geocode them using the venue name concatenated with the city.
 
 Next up: Venue portal (claim listing, submit events, view analytics). Then: Deploy integrity check as Railway cron (nightly).
 

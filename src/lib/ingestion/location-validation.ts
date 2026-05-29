@@ -124,8 +124,44 @@ export async function geocodeVenueWithMapbox(
 }
 
 /**
+ * Evaluates an address string to detect if it is highly generic (e.g. lacks a street number,
+ * or matches city/state/country suffix strings).
+ */
+export function isGenericAddress(address: string | null | undefined): boolean {
+  if (!address) return true;
+
+  const trimmed = address.trim();
+
+  // Pattern checks for strictly matches city/state/country suffix strings
+  const genericPatterns = [
+    /^brooklyn,\s*ny(,\s*us)?$/i,
+    /^new\s*york\s*\(nyc\),\s*ny(,\s*us)?$/i,
+    /^new\s*york,\s*ny(,\s*us)?$/i,
+    /^manhattan,\s*ny(,\s*us)?$/i,
+    /^bronx,\s*ny(,\s*us)?$/i,
+    /^queens,\s*ny(,\s*us)?$/i,
+    /^staten\s*island,\s*ny(,\s*us)?$/i,
+    /^nyc(,\s*ny)?(,\s*us)?$/i,
+    /^united\s*states$/i,
+    /^us$/i,
+  ];
+
+  if (genericPatterns.some((pattern) => pattern.test(trimmed))) {
+    return true;
+  }
+
+  // Check if it lacks a street number (does not start with a digit)
+  const hasStreetNumber = /^\d+/.test(trimmed);
+  if (!hasStreetNumber) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Validates initial coordinates (often from a scraper). If they are invalid (generic centroids),
- * falls back to Mapbox API to find better coordinates.
+ * or the address is generic, falls back to Mapbox API to find better coordinates.
  */
 export async function resolveLocationData(
   venueName: string,
@@ -135,8 +171,9 @@ export async function resolveLocationData(
 ): Promise<{ lat: number | null; lng: number | null; isVerified: boolean }> {
   
   const isInitialValid = isValidLocation(initialLat, initialLng);
+  const isGeneric = isGenericAddress(address);
   
-  if (isInitialValid && initialLat != null && initialLng != null) {
+  if (isInitialValid && !isGeneric && initialLat != null && initialLng != null) {
     return {
       lat: initialLat,
       lng: initialLng,
@@ -144,7 +181,7 @@ export async function resolveLocationData(
     };
   }
 
-  console.log(`[LocationValidation] Initial coordinates (${initialLat}, ${initialLng}) for ${venueName} failed smoke test. Triggering fallback.`);
+  console.log(`[LocationValidation] Initial coordinates (${initialLat}, ${initialLng}) for ${venueName} failed smoke test or address is generic. Triggering fallback.`);
 
   // Attempt geocoding fallback
   const searchAddress = address ? `${venueName}, ${address}` : `${venueName}, New York, NY`;
