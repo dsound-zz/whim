@@ -7,7 +7,10 @@
 export function sanitizeAddressForGeocoding(address: string | null | undefined): string {
   if (!address) return '';
 
-  const segments = address.split(',');
+  // Strip out "(NYC)" or " (NYC)" case-insensitively
+  const preSanitized = address.replace(/\s*\(nyc\)/gi, '');
+
+  const segments = preSanitized.split(',');
   const secondaryMarkerRegex = /\b(floor|fl|suite|ste|apt|room|unit|level)\b/i;
 
   const cleanedSegments = segments.map(segment => {
