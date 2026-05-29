@@ -1,6 +1,7 @@
 import { db } from '@/db';
 import { venues } from '@/db/schema';
 import { ilike } from 'drizzle-orm';
+import { sanitizeAddressForGeocoding } from '@/lib/utils/sanitizeAddress';
 
 // Known generic centroids that we want to reject
 export const GENERIC_CENTROIDS = [
@@ -89,7 +90,8 @@ export async function geocodeVenueWithMapbox(
   }
 
   try {
-    const query = encodeURIComponent(queryText);
+    const sanitizedQuery = sanitizeAddressForGeocoding(queryText);
+    const query = encodeURIComponent(sanitizedQuery);
     const proximity = '-74.0060,40.7128'; // NYC center
     // bbox restricts Mapbox results to NYC — prevents e.g. "Brooklyn Bowl" resolving to Las Vegas
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1&proximity=${proximity}&bbox=${NYC_BOUNDING_BOX.mapboxParam}`;
