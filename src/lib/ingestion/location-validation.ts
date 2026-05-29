@@ -8,6 +8,10 @@ export const GENERIC_CENTROIDS = [
   { lat: 40.664017, lng: -73.88818, name: 'Payne/East NY' },
   { lat: 40.712749, lng: -74.005994, name: 'Generic NYC' },
   { lat: 40.6526, lng: -73.9497, name: 'Generic Brooklyn' },
+  { lat: 40.789352, lng: -73.95709, name: 'Generic Manhattan' },
+  { lat: 40.7135, lng: -73.8283, name: 'Generic Queens' },
+  { lat: 40.847, lng: -73.8972, name: 'Generic Bronx' },
+  { lat: 40.58337, lng: -74.149643, name: 'Generic Staten Island' },
 ];
 
 /**

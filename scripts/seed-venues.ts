@@ -323,6 +323,12 @@ const overrides = [
     address: '199 Chambers St, New York, NY 10007',
     lat: 40.7175,
     lng: -74.0123,
+  },
+  {
+    name: 'Nubeluz',
+    address: '25 W 28th St, New York, NY 10001',
+    lat: 40.7455,
+    lng: -73.9889,
   }
 ];
 
