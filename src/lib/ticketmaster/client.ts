@@ -29,18 +29,50 @@ export async function ingestTicketmasterEvents(apiKey: string | undefined, city 
     throw new Error('TicketMaster API Key is required.');
   }
 
-  const searchUrl = `/events.json?city=${encodeURIComponent(city)}&size=50`;
-  
-  try {
-    const data = await fetchTicketmaster(searchUrl, apiKey);
-    if (!data._embedded || !data._embedded.events) {
-      return { inserted: 0, updated: 0, errors: 0, message: 'No events found.' };
+  const maxPages = 10;
+  const pageSize = 200;
+  const allResults = { inserted: 0, updated: 0, errors: 0, skipped: 0 };
+
+  for (let pageNumber = 0; pageNumber < maxPages; pageNumber++) {
+    const searchUrl = `/events.json?city=${encodeURIComponent(city)}&size=${pageSize}&page=${pageNumber}`;
+    
+    try {
+      const data = await fetchTicketmaster(searchUrl, apiKey);
+      
+      if (!data._embedded || !data._embedded.events) {
+        if (pageNumber === 0) {
+          console.log('[Ticketmaster] No events found for first page.');
+        }
+        break;
+      }
+
+      const totalPages = data.page?.totalPages ?? 1;
+      console.log(`[Ticketmaster] Fetching page ${pageNumber + 1} of ${totalPages} (${data._embedded.events.length} events)...`);
+
+      const pageResults = await processTicketmasterPayload(data._embedded.events);
+      allResults.inserted += pageResults.inserted || 0;
+      allResults.updated += pageResults.updated || 0;
+      allResults.errors += pageResults.errors || 0;
+      allResults.skipped += pageResults.skipped || 0;
+
+      // Stop if we've reached the last available page
+      if (pageNumber + 1 >= totalPages) {
+        console.log('[Ticketmaster] Reached last page.');
+        break;
+      }
+
+      // Respect rate limits: TM Discovery API allows 5 req/sec
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    } catch (err) {
+      console.error(`[Ticketmaster] Failed on page ${pageNumber + 1}:`, err);
+      // If we got at least some results, don't fail the whole run
+      if (pageNumber > 0) break;
+      throw err;
     }
-    return processTicketmasterPayload(data._embedded.events);
-  } catch (err) {
-    console.error('Failed to fetch from Ticketmaster:', err);
-    throw err;
   }
+
+  console.log(`[Ticketmaster] Ingestion complete: inserted=${allResults.inserted}, updated=${allResults.updated}, skipped=${allResults.skipped}, errors=${allResults.errors}`);
+  return allResults;
 }
 
 async function processTicketmasterPayload(tmEvents: any[]) {

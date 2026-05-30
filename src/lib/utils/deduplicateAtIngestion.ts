@@ -27,6 +27,13 @@
 import { db } from '@/db';
 import { events } from '@/db/schema';
 import { and, gte, lte, eq, ne } from 'drizzle-orm';
+import { calculateDistanceMiles } from '@/lib/utils/calculateDistance';
+import {
+  normalizeForComparison,
+  jaccardSimilarity,
+  tokenize,
+  areVenuesSimilar,
+} from '@/lib/utils/venueMatching';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,47 +91,10 @@ function getTrustScore(sourceType: string): number {
 // ─── Matching helpers ─────────────────────────────────────────────────────────
 
 const THIRTY_MINUTES_MS = 30 * 60 * 1000;
-const VENUE_PROXIMITY_MILES = 0.1; // ~160 meters
-const MIN_TITLE_SIMILARITY = 0.4;  // Jaccard similarity threshold
+const MIN_TITLE_SIMILARITY = 0.55;  // Jaccard similarity threshold (raised from 0.4 to reduce false merges)
 
 function areStartTimesClose(timeA: Date, timeB: Date): boolean {
   return Math.abs(timeA.getTime() - timeB.getTime()) <= THIRTY_MINUTES_MS;
-}
-
-function getDistanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 3958.8;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function normalizeForComparison(str: string): string {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function tokenize(str: string): Set<string> {
-  return new Set(
-    normalizeForComparison(str)
-      .split(' ')
-      .filter((token) => token.length > 2) // skip short stop words
-  );
-}
-
-/**
- * Jaccard similarity between two token sets: |A ∩ B| / |A ∪ B|
- */
-function jaccardSimilarity(setA: Set<string>, setB: Set<string>): number {
-  const intersection = new Set([...setA].filter((token) => setB.has(token)));
-  const union = new Set([...setA, ...setB]);
-  if (union.size === 0) return 0;
-  return intersection.size / union.size;
 }
 
 function areTitlesSimilar(titleA: string, titleB: string): boolean {
@@ -133,32 +103,6 @@ function areTitlesSimilar(titleA: string, titleB: string): boolean {
   return jaccardSimilarity(tokensA, tokensB) >= MIN_TITLE_SIMILARITY;
 }
 
-function areVenuesSimilar(
-  nameA: string | null,
-  latA: number | null,
-  lngA: number | null,
-  nameB: string | null,
-  latB: number | null,
-  lngB: number | null
-): boolean {
-  // Coordinate proximity check
-  if (latA != null && lngA != null && latB != null && lngB != null) {
-    if (getDistanceMiles(latA, lngA, latB, lngB) <= VENUE_PROXIMITY_MILES) {
-      return true;
-    }
-  }
-
-  // Name substring check
-  if (nameA && nameB) {
-    const normA = normalizeForComparison(nameA);
-    const normB = normalizeForComparison(nameB);
-    if (normA.includes(normB) || normB.includes(normA)) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 // ─── Core dedup logic ─────────────────────────────────────────────────────────
 

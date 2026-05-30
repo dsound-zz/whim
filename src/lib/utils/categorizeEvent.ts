@@ -97,6 +97,9 @@ export interface PlatformTaxonomy {
   /** Eventbrite: category, subcategory, format */
   ebriteCategory?: string | null;
   ebriteFormat?: string | null;
+  /** SeatGeek: taxonomy name, event type */
+  sgTaxonomy?: string | null;
+  sgType?: string | null;
 }
 
 export function classifyFromPlatformTaxonomy(

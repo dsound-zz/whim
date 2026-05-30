@@ -22,6 +22,8 @@ import type {
   VerificationStatus,
 } from '@/types/verification';
 import { updateEventStatus } from '@/lib/db/eventService';
+import { geocodeWithMapbox } from '@/lib/utils/geocode';
+import { calculateDistanceMeters } from '@/lib/utils/calculateDistance';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -58,8 +60,13 @@ export async function verifyEventIntegrity(
     let coordCheckOutput: CoordCheckOutput;
     let coordError: string | null = null;
 
-    // Bypass coordinate check if content check was skipped or un-scrapeable
-    if (contentCheckOutput.isSkipped) {
+    // Always run coordinate check independently of content check outcome.
+    // Previously the coord check was bypassed when content was skipped,
+    // meaning events from dice/TM/songkick never got coordinates verified.
+    try {
+      coordCheckOutput = await runCoordinateCheck(event);
+    } catch (err) {
+      coordError = String(err);
       coordCheckOutput = {
         isSkipped: true,
         mapboxLat: null,
@@ -67,19 +74,6 @@ export async function verifyEventIntegrity(
         deltaMeters: null,
         isMismatch: false,
       };
-    } else {
-      try {
-        coordCheckOutput = await runCoordinateCheck(event);
-      } catch (err) {
-        coordError = String(err);
-        coordCheckOutput = {
-          isSkipped: true,
-          mapboxLat: null,
-          mapboxLng: null,
-          deltaMeters: null,
-          isMismatch: false,
-        };
-      }
     }
 
     const resolvedStatus = resolveVerificationStatus({
@@ -256,7 +250,12 @@ async function runCoordinateCheck(event: EventData): Promise<CoordCheckOutput> {
     .filter(Boolean)
     .join(', ');
 
-  const mapboxResult = await geocodeWithMapbox(searchQuery);
+  // Use the shared geocoder with types filter for higher precision in verification
+  const mapboxResult = await geocodeWithMapbox(
+    event.venueName ?? 'Unknown Venue',
+    searchQuery,
+    { skipVenueDbLookup: true, types: 'poi,address' }
+  );
 
   if (!mapboxResult) {
     return {
@@ -268,7 +267,7 @@ async function runCoordinateCheck(event: EventData): Promise<CoordCheckOutput> {
     };
   }
 
-  const deltaMeters = haversineDistanceMeters(
+  const deltaMeters = calculateDistanceMeters(
     event.lat,
     event.lng,
     mapboxResult.lat,
@@ -434,66 +433,4 @@ Does this page confirm the event is live?`;
   return parsed;
 }
 
-// ─── Mapbox Geocoding ─────────────────────────────────────────────────────────
 
-async function geocodeWithMapbox(
-  searchQuery: string
-): Promise<MapboxGeocodeResult | null> {
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!mapboxToken) {
-    throw new Error('NEXT_PUBLIC_MAPBOX_TOKEN is not set — cannot run coordinate check');
-  }
-
-  // Restrict results to the NYC metropolitan area bounding box to avoid
-  // returning a venue in another city with the same name.
-  const nycBoundingBox = '-74.2591,40.4774,-73.7002,40.9176';
-
-  const encodedQuery = encodeURIComponent(searchQuery);
-  const url =
-    `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedQuery}.json` +
-    `?access_token=${mapboxToken}` +
-    `&bbox=${nycBoundingBox}` +
-    `&limit=1` +
-    `&types=poi,address`;
-
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Mapbox geocoding error ${response.status} for query: "${searchQuery}"`);
-  }
-
-  const data = await response.json();
-  const firstFeature = data?.features?.[0];
-
-  if (!firstFeature) return null;
-
-  const [lng, lat] = firstFeature.geometry.coordinates as [number, number];
-
-  return {
-    lat,
-    lng,
-    placeName: firstFeature.place_name as string,
-  };
-}
-
-// ─── Haversine (meters) ───────────────────────────────────────────────────────
-
-function haversineDistanceMeters(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const EARTH_RADIUS_METERS = 6_371_000;
-
-  const toRad = (degrees: number) => (degrees * Math.PI) / 180;
-
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-
-  return EARTH_RADIUS_METERS * 2 * Math.asin(Math.sqrt(a));
-}

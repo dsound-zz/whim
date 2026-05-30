@@ -10,6 +10,7 @@ mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoiZHVtb
 
 const getSourceColorHex = (source: string) => {
   if (source.includes('ticketmaster')) return '#3b82f6'; 
+  if (source.includes('seatgeek')) return '#14b8a6'; 
   if (source.includes('dice')) return '#f97316'; 
   if (source.includes('ra_scrape')) return '#c026d3';
   if (source.includes('eventbrite')) return '#ef4444'; 
@@ -60,8 +61,8 @@ export default function MapPanel({
           features: [],
         },
         cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 50,
+        clusterMaxZoom: 12,
+        clusterRadius: 30,
       });
 
       currentMap.addLayer({

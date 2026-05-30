@@ -4,7 +4,7 @@ dotenv.config();
 import { db } from '@/db';
 import { events } from '@/db/schema';
 import { eq, isNotNull, and } from 'drizzle-orm';
-import { geocodeVenueWithMapbox as geocodeVenueName } from '@/lib/ingestion/location-validation';
+import { geocodeWithMapbox } from '@/lib/utils/geocode';
 
 /**
  * Calculates distance between two coordinates in miles using the Haversine formula
@@ -50,7 +50,7 @@ async function run() {
 
   for (const venue of uniqueVenues) {
     const geocodeQuery = `${venue.name}, ${venue.address}`;
-    const geocoded = await geocodeVenueName(venue.name, geocodeQuery);
+    const geocoded = await geocodeWithMapbox(venue.name, geocodeQuery);
     
     if (geocoded) {
       const distance = getDistanceFromLatLonInMiles(nycLat, nycLng, geocoded.lat, geocoded.lng);

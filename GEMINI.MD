@@ -145,7 +145,7 @@ The core table. Every source normalizes into this single shape. Location denorma
 Tracks how each venue's events are fetched. The worker scheduler reads this table. Fields: id, venueId, type, config (jsonb with feedUrl/apiKey/inboxAddress), lastSyncedAt, syncStatus (active/paused/error), errorMessage, createdAt. One venue can have multiple ingestion sources.
 
 ### apiKeys
-B2B customer auth. Fields: id, key, customerName, customerEmail, tier (free/starter/pro), callsToday, callLimit, isActive, createdAt.
+B2B customer auth. Fields: id, key, customerName, customerEmail, tier (free/starter/pro), callsToday, callLimit, lastResetAt, isActive, createdAt.
 
 ### eventVerificationLogs
 Stores the result of each event integrity smoke test. One row per event (upserted on eventId — always reflects the most recent check). Fields: id, eventId (FK → events, cascade delete), checkedAt, status (verified/flagged_content/flagged_coordinates/flagged_both/skipped/error), pageTextSnippet (first 5k chars of fetched page for debugging), llmConfirmed (bool), llmReason (text), storedLat, storedLng, mapboxLat, mapboxLng, coordDeltaMeters, mismatchReason, errorMessage. Unique index on eventId; indexes on checkedAt and status.
@@ -197,14 +197,34 @@ Phase 2 — Data Integrity layer (complete 2026-05-29):
 - Expanded manual overrides in `scripts/seed-venues.ts` with coordinates for 25+ major NYC venues (e.g. Blue Note, Webster Hall, Le Poisson Rouge, Brooklyn Paramount) to completely bypass geocoding issues and prevent generic centroid mappings.
 - Backfilled the existing database using `npm run db:seed-venues` and `npm run db:sync-events`, successfully reducing the count of events mapped to generic centroids from **78** to **0**.
 
-Next up: Venue portal (claim listing, submit events, view analytics). Then: Deploy integrity check as Railway cron (nightly).
+Phase 3 — Refactoring, Rate Limiting, Multi-City, and SeatGeek (completed 2026-05-30):
+- **Unified Geocoding**: Created a central Mapbox geocoder utility (`src/lib/utils/geocode.ts`) and removed redundant geocoding code from the ingestion pipeline, NYC Parks client, and event verification service.
+- **B2B API Rate Limit Auto-Reset**: Modified database schema to add `lastResetAt` timestamp and converted API key call counters to integers. Updated `apiKeyService.ts` to automatically reset counters daily, created a manual reset script (`scripts/reset-api-key-counters.ts`), and registered `reset:api-counters` npm script.
+- **SeatGeek API & UI Integration**: Built a complete SeatGeek client (`src/lib/seatgeek/client.ts`) supporting pagination, taxonomy mapping, ingestion-level deduplication, and automated syncing (`scripts/sync-seatgeek.ts` + `sync:seatgeek` npm command). Also fully integrated SeatGeek into the Admin Events and Verification dashboards (adding SeatGeek options to dropdown selectors, metric color coding, table rows, and Mapbox map markers).
+- **Multi-City Foundation**: Introduced `src/lib/utils/cityConfig.ts` defining boundaries, timezones, and configurations for different cities (starting with NYC), allowing validation and bounding-box calculations to dynamically support multi-city expansion.
+- **Unified Utilities & DRY Refactoring**:
+  - Created shared venue matching engine (`src/lib/utils/venueMatching.ts`) using Jaccard Similarity and string tokenization to replace duplicate similarity logic.
+  - Raised the Jaccard threshold from 0.4 to 0.55 in `deduplicateAtIngestion.ts` to improve matching precision.
+  - Created shared distance calculations (`src/lib/utils/calculateDistance.ts`) and shared Gemini API initialization (`src/lib/utils/gemini.ts`).
+  - Created centralized ingestion tracking service (`src/lib/db/ingestionService.ts`).
+- **Ticketmaster Scalability**: Enhanced Ticketmaster client to query and paginate up to 2,000 events (200 events/page × 10 pages) per sync, resolving the previous hard cap of 50 events.
+- **Data Integrity Improvements**:
+  - Decoupled verification checks in `verifyEventIntegrity.ts` so coordinate verification runs on all scrapeable/non-scrapeable sources.
+  - Improved `isGenericAddress` logic in location validation to ignore false positives by checking ZIP codes and street suffixes.
+  - Removed outdated NYC Parks historical fallback sync logic to keep data fresh.
+- **Ops & Docker Multi-Stage Build**: Redesigned `/Dockerfile` to use a multi-stage layout, separating the lightweight runtime server (`node:20-slim`) from the heavy scraper dependencies (`playwright:v1.60.0-jammy`), reducing overall image size and surface area.
+- **Codebase Sanitization**: Renamed application package name to `whim` and deleted five unused scratch scripts (`test-jones-beach.ts`, `test-superior-ingredients.ts`, `scratch-mapbox.ts`, `check-venues.ts`, `test_neon.ts`).
+- **Unified Ingestion Script**: Replaced the shell script `sync-all.sh` with a cross-platform TypeScript orchestrator (`scripts/sync-all.ts` + `sync:all` npm command) that runs all scrapers, sync jobs, enrichment, and cleanup sequentially.
+- **Mapbox Clustering Optimization**: Adjusted Mapbox GL JS clustering parameters in `MapPanel.tsx` (`clusterMaxZoom` to 12, and `clusterRadius` to 30) so that clustered events break out into individual markers sooner.
+
+Next up: Venue portal (claim listing, submit events, view analytics). Then: Deploy integrity check and syncs as Railway crons.
 
 ## What is NOT in scope yet
 
 - Venue portal (claim listing, submit events, view analytics) — **next priority**
 - Email parsing pipeline (LLM-based, for long-tail venues)
 - Friend coordination / social layer
-- Multi-city expansion (currently NYC only)
+- Multi-city expansion (fully threading CityConfig through all ingestors and API endpoints)
 - Payment/billing infrastructure
 - Resident Advisor scraper (planned for Phase 4)
 

@@ -1,5 +1,5 @@
 {
-  "name": "temp_app",
+  "name": "whim",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -24,7 +24,9 @@
     "verify:integrity": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/run-integrity-check.ts",
     "db:seed-venues": "tsx -r dotenv/config scripts/seed-venues.ts",
     "db:sync-events": "tsx -r dotenv/config scripts/sync-events-with-venues.ts",
-    "sync:all": "./scripts/sync-all.sh"
+    "sync:all": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-all.ts",
+    "sync:seatgeek": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-seatgeek.ts",
+    "reset:api-counters": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/reset-api-key-counters.ts"
   },
   "dependencies": {
     "@emnapi/core": "^1.10.0",

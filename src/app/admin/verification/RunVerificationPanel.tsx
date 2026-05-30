@@ -9,6 +9,7 @@ const SOURCE_OPTIONS = [
   { label: 'NYC Parks', value: 'nyc_parks_api' },
   { label: 'Eventbrite', value: 'eventbrite_api' },
   { label: 'Ticketmaster', value: 'ticketmaster_api' },
+  { label: 'SeatGeek', value: 'seatgeek_api' },
   { label: 'Songkick', value: 'songkick_scrape' },
   { label: 'Dice', value: 'dice_scrape' },
 ];

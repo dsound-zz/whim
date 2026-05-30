@@ -1,7 +1,4 @@
-import { db } from '@/db';
-import { venues } from '@/db/schema';
-import { ilike } from 'drizzle-orm';
-import { sanitizeAddressForGeocoding } from '@/lib/utils/sanitizeAddress';
+import { geocodeWithMapbox } from '@/lib/utils/geocode';
 
 // Known generic centroids that we want to reject
 export const GENERIC_CENTROIDS = [
@@ -62,83 +59,24 @@ export function isValidLocation(lat: number | null | undefined, lng: number | nu
 }
 
 /**
- * Geocodes a venue name and query string inside NYC bounding box using Mapbox.
- */
-export async function geocodeVenueWithMapbox(
-  venueName: string,
-  queryText: string
-): Promise<{ lat: number; lng: number } | null> {
-  if (!venueName || venueName === 'Unknown Venue') {
-    return null;
-  }
-
-  // 1. Check local DB for known venue override
-  try {
-    const existing = await db
-      .select()
-      .from(venues)
-      .where(ilike(venues.name, venueName))
-      .limit(1);
-      
-    if (existing.length > 0 && existing[0].lat && existing[0].lng) {
-      return { lat: existing[0].lat, lng: existing[0].lng };
-    }
-  } catch (err) {
-    console.error(`[Geocoder] DB check failed for "${venueName}":`, err);
-  }
-
-  // 2. Fallback to Mapbox
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!mapboxToken) {
-    return null;
-  }
-
-  try {
-    const sanitizedQuery = sanitizeAddressForGeocoding(queryText);
-    const query = encodeURIComponent(sanitizedQuery);
-    const proximity = '-74.0060,40.7128'; // NYC center
-    // bbox restricts Mapbox results to NYC — prevents e.g. "Brooklyn Bowl" resolving to Las Vegas
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1&proximity=${proximity}&bbox=${NYC_BOUNDING_BOX.mapboxParam}`;
-
-    const geoRes = await fetch(url);
-    if (!geoRes.ok) {
-      console.warn(`[Geocoder] HTTP ${geoRes.status} for "${venueName}"`);
-      return null;
-    }
-    const geoData = await geoRes.json();
-
-    if (geoData.features && geoData.features.length > 0) {
-      const center = geoData.features[0].center; // [lng, lat]
-      const resolvedLng = center[0];
-      const resolvedLat = center[1];
-
-      // Final guard: even with bbox param, double-check the result is within NYC
-      if (!isWithinNYC(resolvedLat, resolvedLng)) {
-        console.warn(`[Geocoder] Result for "${venueName}" (${resolvedLat}, ${resolvedLng}) is outside NYC bounds. Rejecting.`);
-        return null;
-      }
-
-      return {
-        lng: resolvedLng,
-        lat: resolvedLat,
-      };
-    }
-  } catch (err) {
-    console.error(`[Geocoder] Failed for "${venueName}":`, err);
-  }
-  return null;
-}
-
-/**
- * Evaluates an address string to detect if it is highly generic (e.g. lacks a street number,
- * or matches city/state/country suffix strings).
+ * Evaluates an address string to detect if it is highly generic (e.g. a bare city name
+ * without any street-level specificity).
+ *
+ * Previously this function flagged any address without a leading street number as generic,
+ * which caused false positives on landmarks (Central Park, Madison Square Garden) and
+ * addresses with ZIP codes. The new logic:
+ * 1. Known generic patterns (bare city/state) → always generic
+ * 2. Has a street suffix (St, Ave, Rd, etc.) or ZIP code → NOT generic
+ * 3. Very short (< 15 chars) without a street suffix → generic
+ * 4. Everything else → not generic (err on the side of keeping data)
  */
 export function isGenericAddress(address: string | null | undefined): boolean {
   if (!address) return true;
 
   const trimmed = address.trim();
+  if (trimmed.length === 0) return true;
 
-  // Pattern checks for strictly matches city/state/country suffix strings
+  // Known generic patterns: bare city/state/country strings
   const genericPatterns = [
     /^brooklyn,\s*ny(,\s*us)?$/i,
     /^new\s*york\s*\(nyc\),\s*ny(,\s*us)?$/i,
@@ -156,12 +94,22 @@ export function isGenericAddress(address: string | null | undefined): boolean {
     return true;
   }
 
-  // Check if it lacks a street number (does not start with a digit)
-  const hasStreetNumber = /^\d+/.test(trimmed);
-  if (!hasStreetNumber) {
-    return true;
-  }
+  // If it contains a recognizable street suffix → specific enough
+  const hasStreetSuffix = /\b(st|street|ave|avenue|rd|road|blvd|boulevard|ln|lane|pl|place|dr|drive|way|pkwy|parkway|ct|court|ter|terrace|cir|circle|hwy|highway|expy|expressway)\b/i.test(trimmed);
+  if (hasStreetSuffix) return false;
 
+  // If it contains a US ZIP code → specific enough
+  const hasZipCode = /\b\d{5}(-\d{4})?\b/.test(trimmed);
+  if (hasZipCode) return false;
+
+  // If it starts with a street number → likely specific
+  const hasStreetNumber = /^\d+/.test(trimmed);
+  if (hasStreetNumber) return false;
+
+  // Short strings without any of the above signals are likely generic
+  if (trimmed.length < 15) return true;
+
+  // Default: err on the side of not flagging
   return false;
 }
 
@@ -189,9 +137,9 @@ export async function resolveLocationData(
 
   console.log(`[LocationValidation] Initial coordinates (${initialLat}, ${initialLng}) for ${venueName} failed smoke test or address is generic. Triggering fallback.`);
 
-  // Attempt geocoding fallback
+  // Attempt geocoding fallback using unified geocoder
   const searchAddress = address ? `${venueName}, ${address}` : `${venueName}, New York, NY`;
-  const fallbackGeo = await geocodeVenueWithMapbox(venueName, searchAddress);
+  const fallbackGeo = await geocodeWithMapbox(venueName, searchAddress);
 
   if (fallbackGeo) {
     const isFallbackValid = isValidLocation(fallbackGeo.lat, fallbackGeo.lng);

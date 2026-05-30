@@ -1,9 +1,10 @@
 import { db } from '@/db';
-import { events, ingestionSources, venues } from '@/db/schema';
-import { eq, ilike } from 'drizzle-orm';
+import { events, ingestionSources } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import { geocodeWithMapbox } from '@/lib/utils/geocode';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -84,72 +85,6 @@ function parseDateTime(dateStr: string | undefined, timeStr: string | undefined)
   return dateObj;
 }
 
-function shiftToUpcoming(rawDateStr: string | undefined): Date {
-  if (!rawDateStr) return new Date();
-  const rawDate = new Date(rawDateStr);
-  const today = new Date();
-  
-  // Shift to a dynamic offset in the next 28 days based on original date
-  const dayOffset = (rawDate.getDate() + (rawDate.getMonth() || 0)) % 28;
-  const targetDate = new Date(today);
-  targetDate.setDate(today.getDate() + dayOffset);
-  return targetDate;
-}
-
-async function geocodeVenue(venueName: string, borough: string): Promise<{ lat: number; lng: number; address: string } | null> {
-  if (!venueName || venueName === 'Unknown Venue') {
-    return null;
-  }
-
-  // 1. Check local DB for known venue override
-  try {
-    const existing = await db
-      .select()
-      .from(venues)
-      .where(ilike(venues.name, venueName))
-      .limit(1);
-      
-    if (existing.length > 0 && existing[0].lat && existing[0].lng) {
-      return { 
-        lat: existing[0].lat, 
-        lng: existing[0].lng,
-        address: existing[0].address || `${venueName}, New York, NY`
-      };
-    }
-  } catch (err) {
-    console.error(`[NYC Parks Geocoder] DB check failed for "${venueName}":`, err);
-  }
-
-  // 2. Fallback to Mapbox
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!mapboxToken) {
-    return null;
-  }
-
-  try {
-    const bName = getBoroughName(borough);
-    const query = encodeURIComponent(`${venueName}, ${bName}, New York City, NY, USA`);
-    const bbox = "-74.2591,40.4774,-73.7004,40.9162"; // NYC bounding box
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1&bbox=${bbox}`;
-    
-    const geoRes = await fetch(url);
-    const geoData = await geoRes.json();
-    
-    if (geoData.features && geoData.features.length > 0) {
-      const feature = geoData.features[0];
-      const center = feature.center; // [lng, lat]
-      return {
-        lng: center[0],
-        lat: center[1],
-        address: feature.place_name,
-      };
-    }
-  } catch (err) {
-    console.error(`[NYC Parks Geocoder] Failed for "${venueName}":`, err);
-  }
-  return null;
-}
-
 export async function runNYCParksIngestion(): Promise<IngestionResult> {
   const startTime = Date.now();
   let eventsUpserted = 0;
@@ -186,28 +121,12 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
     );
     let rawEvents: NYCParksRawEvent[] = await eventsRes.json();
 
-    // Fallback: If 0 upcoming events found, load the latest historical events for testing
-    let isHistoricalFallback = false;
     if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
-      console.log('[NYC Parks] 0 upcoming events found. Falling back to fetching latest 100 historical events...');
-      const fallbackParams = new URLSearchParams({
-        '$order': 'date DESC',
-        '$limit': '100',
-      });
-      eventsRes = await fetch(
-        `https://data.cityofnewyork.us/resource/fudw-fgrp.json?${fallbackParams}`,
-        { headers }
-      );
-      rawEvents = await eventsRes.json();
-      isHistoricalFallback = true;
-    }
-
-    if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
-      console.log('[NYC Parks] No events retrieved from Socrata API.');
+      console.warn('[NYC Parks] 0 upcoming events found from Socrata API. This may indicate an off-season or API issue.');
       return { eventsUpserted: 0, eventsSkipped: 0, errors: 0, durationMs: Date.now() - startTime };
     }
 
-    console.log(`[NYC Parks] Retrieved ${rawEvents.length} events (fallback: ${isHistoricalFallback}).`);
+    console.log(`[NYC Parks] Retrieved ${rawEvents.length} upcoming events.`);
 
     // Step 2: Extract unique event IDs
     const eventIds = rawEvents
@@ -289,13 +208,15 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
         let address = location?.address ?? rawEvent.location_description ?? venueName;
         const borough = location?.borough ?? '';
 
-        // Geocode fallback using Mapbox if lat/lng is missing
+        // Geocode fallback using unified Mapbox geocoder if lat/lng is missing
         if ((lat === null || lng === null || isNaN(lat) || isNaN(lng)) && venueName) {
-          const geocoded = await geocodeVenue(venueName, borough);
+          const boroughName = getBoroughName(borough);
+          const geocodeQuery = `${venueName}, ${boroughName}, New York City, NY, USA`;
+          const geocoded = await geocodeWithMapbox(venueName, geocodeQuery);
           if (geocoded) {
             lat = geocoded.lat;
             lng = geocoded.lng;
-            address = geocoded.address;
+            address = geocoded.placeName;
           }
         }
 
@@ -311,18 +232,8 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
           (!rawEvent.cost_description?.toLowerCase().includes('$') && 
            !rawEvent.description?.toLowerCase().includes('$'));
 
-        // Resolve dates: if historical fallback, we shift them to the future (next 28 days)
-        // so that they are active upcoming events for testing and show up in the main feed
-        let startAt = parseDateTime(rawEvent.date, rawEvent.start_time);
+        const startAt = parseDateTime(rawEvent.date, rawEvent.start_time);
         let endAt: Date | null = rawEvent.end_time ? parseDateTime(rawEvent.date, rawEvent.end_time) : null;
-
-        if (isHistoricalFallback) {
-          const shiftedDate = shiftToUpcoming(rawEvent.date);
-          startAt = parseDateTime(shiftedDate.toISOString(), rawEvent.start_time);
-          if (rawEvent.end_time) {
-            endAt = parseDateTime(shiftedDate.toISOString(), rawEvent.end_time);
-          }
-        }
 
         const dateValidation = validateEventDates(startAt, endAt);
         if (!dateValidation.isValid) {

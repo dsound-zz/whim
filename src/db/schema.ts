@@ -200,9 +200,10 @@ export const apiKeys = pgTable(
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email"),
     tier: text("tier").default("free"), // free, starter, pro
-    callsToday: doublePrecision("calls_today").default(0),
-    callLimit: doublePrecision("call_limit").default(100),
+    callsToday: integer("calls_today").default(0),
+    callLimit: integer("call_limit").default(100),
     isActive: boolean("is_active").default(true),
+    lastResetAt: timestamp("last_reset_at").defaultNow(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [uniqueIndex("api_keys_key_idx").on(table.key)]
