@@ -24,6 +24,7 @@ import type {
 import { updateEventStatus } from '@/lib/db/eventService';
 import { geocodeWithMapbox } from '@/lib/utils/geocode';
 import { calculateDistanceMeters } from '@/lib/utils/calculateDistance';
+import { venueOverrides } from '@/lib/utils/venueOverrides';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -210,12 +211,23 @@ async function runContentCheck(event: EventData): Promise<ContentCheckOutput> {
   const pageText = stripHtmlTags(rawHtml).slice(0, MAX_PAGE_TEXT_CHARS);
   const pageTextSnippet = pageText.slice(0, MAX_SNIPPET_CHARS);
 
-  const llmResult = await evaluatePageWithLlm({
-    pageText,
-    eventTitle: event.title,
-    eventStartAt: event.startAt,
-    eventVenueName: event.venueName,
-  });
+  let llmResult: LlmEvaluationResponse;
+  try {
+    llmResult = await evaluatePageWithLlm({
+      pageText,
+      eventTitle: event.title,
+      eventStartAt: event.startAt,
+      eventVenueName: event.venueName,
+    });
+  } catch (llmError: any) {
+    console.error(`[verifyEventIntegrity] LLM Evaluation failed for event ${event.id}:`, llmError);
+    return {
+      isSkipped: true,
+      pageTextSnippet,
+      llmConfirmed: null,
+      llmReason: `Skipped: LLM evaluation error (${llmError.message || String(llmError)})`,
+    };
+  }
 
   return {
     isSkipped: false,
@@ -243,6 +255,27 @@ async function runCoordinateCheck(event: EventData): Promise<CoordCheckOutput> {
       mapboxLng: null,
       deltaMeters: null,
       isMismatch: false,
+    };
+  }
+
+  const override = venueOverrides.find(
+    (v) => v.name.toLowerCase() === (event.venueName ?? '').toLowerCase()
+  );
+
+  if (override) {
+    const deltaMeters = calculateDistanceMeters(
+      event.lat,
+      event.lng,
+      override.lat,
+      override.lng
+    );
+
+    return {
+      isSkipped: false,
+      mapboxLat: override.lat,
+      mapboxLng: override.lng,
+      deltaMeters,
+      isMismatch: deltaMeters > COORD_DELTA_FLAG_THRESHOLD_METERS,
     };
   }
 
@@ -424,10 +457,18 @@ Does this page confirm the event is live?`;
   const result = await model.generateContent(userPrompt);
   const rawText = result.response.text();
 
-  const parsed = JSON.parse(rawText) as LlmEvaluationResponse;
+  let cleanText = rawText.trim();
+  cleanText = cleanText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+
+  let parsed: LlmEvaluationResponse;
+  try {
+    parsed = JSON.parse(cleanText) as LlmEvaluationResponse;
+  } catch (err: any) {
+    throw new Error(`LLM returned invalid JSON. Raw text: ${rawText}`);
+  }
 
   if (typeof parsed.confirmed !== 'boolean' || typeof parsed.reason !== 'string') {
-    throw new Error(`Unexpected LLM JSON shape: ${rawText}`);
+    throw new Error(`Unexpected LLM JSON shape: ${cleanText}`);
   }
 
   return parsed;

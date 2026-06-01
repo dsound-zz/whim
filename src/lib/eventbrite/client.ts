@@ -1,9 +1,26 @@
+/**
+ * Eventbrite ingestion client.
+ *
+ * Uses the Eventbrite /events/search/ endpoint with a location-based query
+ * (lat/lon + radius) to capture all upcoming public events in NYC rather than
+ * locking ingestion to pre-configured organizer or venue IDs.
+ *
+ * This unlocks the full breadth of Eventbrite's catalog: community events,
+ * art gallery openings, book readings, food/drink events, comedy shows,
+ * workshops, fitness classes, and film screenings that no ticketing platform
+ * covers at city scale.
+ *
+ * Pagination: up to 5 pages × 50 events/page = 250 events per sync.
+ * Rate limits: Eventbrite allows ~1,000 API calls/hour for private tokens.
+ */
+
 import { db } from '@/db';
-import { events, venues } from '@/db/schema';
+import { events } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import { isWithinNYC } from '@/lib/ingestion/location-validation';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -13,8 +30,17 @@ import {
 
 const EVENTBRITE_API_URL = 'https://www.eventbriteapi.com/v3';
 
-// Helper to fetch from Eventbrite
-async function fetchEventbrite(endpoint: string, apiKey: string) {
+/** NYC center coordinates and search radius for city-wide event discovery. */
+const NYC_LAT = 40.7128;
+const NYC_LNG = -74.006;
+const NYC_SEARCH_RADIUS_KM = 30;
+
+const MAX_PAGES = 5;
+const PAGE_SIZE = 50;
+
+// ─── HTTP helper ──────────────────────────────────────────────────────────────
+
+async function fetchEventbrite(endpoint: string, apiKey: string): Promise<Record<string, unknown>> {
   const url = `${EVENTBRITE_API_URL}${endpoint}`;
   const response = await fetch(url, {
     headers: {
@@ -22,39 +48,140 @@ async function fetchEventbrite(endpoint: string, apiKey: string) {
     },
   });
   if (!response.ok) {
-    throw new Error(`Eventbrite API error: ${response.statusText}`);
+    throw new Error(`Eventbrite API error: ${response.status} ${response.statusText}`);
   }
   return response.json();
 }
 
-export async function ingestEventbriteEvents(apiKey: string | undefined, city = 'New York') {
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Ingests upcoming public events from all of NYC using the Eventbrite
+ * /events/search/ endpoint. Paginates up to MAX_PAGES pages.
+ *
+ * Falls back gracefully — if a page fails after the first page has already
+ * succeeded, the partial results are kept rather than discarding everything.
+ */
+export async function ingestEventbriteEvents(apiKey: string | undefined): Promise<{
+  inserted: number;
+  updated: number;
+  errors: number;
+  skipped: number;
+}> {
   if (!apiKey) {
-    console.warn('No Eventbrite API key provided, returning mock data.');
-    return ingestMockData();
+    throw new Error('EVENTBRITE_API_KEY is missing');
   }
 
-  // In a real implementation, we would query the destination/search API or a venue's events
-  // For this MVP, let's assume we query by location:
-  const searchUrl = `/events/search/?location.address=${encodeURIComponent(city)}&expand=venue`;
-  
-  try {
-    const data = await fetchEventbrite(searchUrl, apiKey);
-    return processEventbritePayload(data.events);
-  } catch (err) {
-    console.error('Failed to fetch from Eventbrite:', err);
-    throw err;
+  const allResults = { inserted: 0, updated: 0, errors: 0, skipped: 0 };
+
+  // Eventbrite uses a cursor-based continuation token for pagination.
+  let continuationToken: string | null = null;
+
+  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber++) {
+    try {
+      // Build search URL: location-based, live events only, expanding venue + ticket_availability
+      let searchUrl =
+        `/events/search/` +
+        `?location.latitude=${NYC_LAT}` +
+        `&location.longitude=${NYC_LNG}` +
+        `&location.within=${NYC_SEARCH_RADIUS_KM}km` +
+        `&status=live` +
+        `&expand=venue,ticket_availability,category,format` +
+        `&page_size=${PAGE_SIZE}` +
+        `&sort_by=date` +
+        `&start_date.range_start=${encodeURIComponent(new Date().toISOString())}`;
+
+      if (continuationToken) {
+        searchUrl += `&continuation=${continuationToken}`;
+      }
+
+      const data = await fetchEventbrite(searchUrl, apiKey);
+      const eventbriteEvents = (data.events as any[]) ?? [];
+
+      if (eventbriteEvents.length === 0) {
+        if (pageNumber === 1) {
+          console.log('[Eventbrite] No events found in NYC area — check API key and quota.');
+        }
+        break;
+      }
+
+      // Extract continuation token for next page
+      const pagination = data.pagination as Record<string, unknown> | undefined;
+      continuationToken = (pagination?.continuation as string) ?? null;
+      const hasMorePages = (pagination?.has_more_items as boolean) ?? false;
+
+      console.log(
+        `[Eventbrite] Page ${pageNumber}: fetched ${eventbriteEvents.length} events` +
+          (hasMorePages ? ` (more available)` : ` (last page)`)
+      );
+
+      const pageResults = await processEventbritePayload(eventbriteEvents);
+      allResults.inserted += pageResults.inserted;
+      allResults.updated += pageResults.updated;
+      allResults.errors += pageResults.errors;
+      allResults.skipped += pageResults.skipped;
+
+      if (!hasMorePages || !continuationToken) {
+        console.log('[Eventbrite] Reached last page.');
+        break;
+      }
+
+      // Polite delay between pages
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } catch (err) {
+      console.error(`[Eventbrite] Failed on page ${pageNumber}:`, err);
+      // Keep partial results if we've already succeeded on earlier pages
+      if (pageNumber > 1) break;
+      throw err;
+    }
   }
+
+  console.log(
+    `[Eventbrite] Ingestion complete: inserted=${allResults.inserted}, ` +
+      `updated=${allResults.updated}, skipped=${allResults.skipped}, errors=${allResults.errors}`
+  );
+  return allResults;
 }
 
-async function processEventbritePayload(eventbriteEvents: any[]) {
+// ─── Payload processing ───────────────────────────────────────────────────────
+
+async function processEventbritePayload(
+  eventbriteEvents: any[]
+): Promise<{ inserted: number; updated: number; errors: number; skipped: number }> {
   const results = { inserted: 0, updated: 0, errors: 0, skipped: 0 };
 
   for (const ebEvent of eventbriteEvents) {
     try {
       const venueData = ebEvent.venue;
 
+      // Skip events without a real venue (purely online events have no lat/lng)
+      const isOnlineOnly =
+        ebEvent.online_event === true ||
+        !venueData?.address?.latitude ||
+        !venueData?.address?.longitude;
+
+      if (isOnlineOnly) {
+        results.skipped++;
+        continue;
+      }
+
+      const parsedLat = parseFloat(venueData.address.latitude);
+      const parsedLng = parseFloat(venueData.address.longitude);
+
+      // Guard: reject events whose venue coordinates fall outside the NYC bounding box.
+      // Eventbrite's location search uses a radius from the center point and can return
+      // events in New Jersey, Long Island, or (as seen in production) New Hampshire.
+      if (!isWithinNYC(parsedLat, parsedLng)) {
+        console.warn(
+          `[Eventbrite] Skipping event ${ebEvent.id} "${ebEvent.name?.text}" — ` +
+            `venue coordinates (${parsedLat}, ${parsedLng}) are outside the NYC bounding box.`
+        );
+        results.skipped++;
+        continue;
+      }
+
       const rawStartAt = new Date(ebEvent.start.utc);
-      const rawEndAt = new Date(ebEvent.end.utc);
+      const rawEndAt = ebEvent.end?.utc ? new Date(ebEvent.end.utc) : null;
       const dateValidation = validateEventDates(rawStartAt, rawEndAt);
       if (!dateValidation.isValid) {
         console.warn(`[Eventbrite] Skipping event ${ebEvent.id}: ${dateValidation.rejectionReason}`);
@@ -84,9 +211,9 @@ async function processEventbritePayload(eventbriteEvents: any[]) {
         endAt: dateValidation.sanitizedEndAt,
         venueName: venueData?.name || 'Unknown Venue',
         address: venueData?.address?.localized_address_display || null,
-        lat: venueData?.address?.latitude ? parseFloat(venueData.address.latitude) : null,
-        lng: venueData?.address?.longitude ? parseFloat(venueData.address.longitude) : null,
-        isFree: ebEvent.is_free,
+        lat: parsedLat,
+        lng: parsedLng,
+        isFree: ebEvent.is_free ?? false,
         priceMin: null as number | null,
         priceMax: null as number | null,
         ticketUrl: ebEvent.url,
@@ -111,19 +238,28 @@ async function processEventbritePayload(eventbriteEvents: any[]) {
         isFree: eventToInsert.isFree,
       };
 
-      // Intra-source dedup
-      const existing = await db.select().from(events).where(
-        and(eq(events.externalId, eventToInsert.externalId), eq(events.sourceType, 'eventbrite_api'))
-      );
+      // Intra-source dedup: same Eventbrite event re-synced
+      const existing = await db
+        .select()
+        .from(events)
+        .where(
+          and(
+            eq(events.externalId, eventToInsert.externalId),
+            eq(events.sourceType, 'eventbrite_api')
+          )
+        );
 
       if (existing.length > 0) {
-        await db.update(events).set({
-          ...eventToInsert,
-          ticketUrls: buildInitialTicketUrls(dedupCandidate),
-        }).where(eq(events.id, existing[0].id));
+        await db
+          .update(events)
+          .set({
+            ...eventToInsert,
+            ticketUrls: buildInitialTicketUrls(dedupCandidate),
+          })
+          .where(eq(events.id, existing[0].id));
         results.updated++;
       } else {
-        // Cross-platform dedup check
+        // Cross-platform dedup check before inserting as new canonical event
         const dedupResult = await findCanonicalMatch(dedupCandidate);
 
         if (dedupResult.isMatch && dedupResult.canonicalEventId) {
@@ -144,48 +280,10 @@ async function processEventbritePayload(eventbriteEvents: any[]) {
         }
       }
     } catch (e) {
-      console.error('Failed to process event:', ebEvent.id, e);
+      console.error('[Eventbrite] Failed to process event:', ebEvent.id, e);
       results.errors++;
     }
   }
 
   return results;
-}
-
-async function ingestMockData() {
-  console.log('Ingesting mock Eventbrite data for NYC...');
-  const mockEvents = [
-    {
-      id: 'mock-1',
-      name: { text: 'Brooklyn Indie Music Fest' },
-      description: { text: 'A great local music festival in Brooklyn.' },
-      start: { utc: new Date(Date.now() + 86400000).toISOString() },
-      end: { utc: new Date(Date.now() + 90000000).toISOString() },
-      venue: {
-        name: 'Brooklyn Steel',
-        address: { localized_address_display: '319 Frost St, Brooklyn, NY 11222', latitude: '40.7196', longitude: '-73.9387' }
-      },
-      logo: { url: 'https://picsum.photos/400/200' },
-      is_free: false,
-      url: 'https://eventbrite.com/mock-1',
-      status: 'live'
-    },
-    {
-      id: 'mock-2',
-      name: { text: 'Tech Meetup NYC' },
-      description: { text: 'Monthly gathering of software engineers.' },
-      start: { utc: new Date(Date.now() + 172800000).toISOString() },
-      end: { utc: new Date(Date.now() + 180000000).toISOString() },
-      venue: {
-        name: 'WeWork Chelsea',
-        address: { localized_address_display: '115 W 18th St, New York, NY 10011', latitude: '40.7410', longitude: '-73.9984' }
-      },
-      logo: { url: 'https://picsum.photos/400/200' },
-      is_free: true,
-      url: 'https://eventbrite.com/mock-2',
-      status: 'live'
-    }
-  ];
-
-  return processEventbritePayload(mockEvents);
 }

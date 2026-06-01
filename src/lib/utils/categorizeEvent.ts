@@ -310,7 +310,7 @@ export function classifyFromKeywords(
 // ─── Stage 3: Gemini Flash fallback ──────────────────────────────────────────
 
 const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 const VALID_CATEGORIES = new Set<WhimCategory>([
   'music', 'comedy', 'art', 'theater', 'food_drink',
@@ -349,7 +349,6 @@ Category:`;
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 16,
           topP: 1,
         },
       }),
@@ -367,7 +366,8 @@ Category:`;
       return rawAnswer as WhimCategory;
     }
 
-    console.warn(`[CategoryClassifier] Gemini returned unrecognized category: "${rawAnswer}"`);
+    console.warn(`[CategoryClassifier] Gemini returned unrecognized category: "${String(rawAnswer)}"`);
+    console.warn(`[CategoryClassifier] Full API Response:`, JSON.stringify(data, null, 2));
     return null;
   } catch (error) {
     console.error('[CategoryClassifier] Gemini request failed:', error);

@@ -1,6 +1,12 @@
-import { db } from '@/db';
-import { ingestionSources } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+/**
+ * Eventbrite ingestion runner.
+ *
+ * Wraps the city-wide Eventbrite client with ingestion source tracking.
+ * No longer iterates over per-organizer/venue config rows — the client
+ * handles a single NYC-wide location search internally.
+ */
+
+import { updateIngestionSourceStatus } from '@/lib/db/ingestionService';
 import { ingestEventbriteEvents } from '../eventbrite/client';
 
 export interface IngestionResult {
@@ -12,39 +18,22 @@ export interface IngestionResult {
 
 export async function runEventbriteIngestion(): Promise<IngestionResult> {
   const startTime = Date.now();
+  const apiKey = process.env.EVENTBRITE_API_KEY;
 
   try {
-    const apiKey = process.env.EVENTBRITE_API_KEY;
+    const result = await ingestEventbriteEvents(apiKey);
 
-    // ingestEventbriteEvents handles optional apiKey with mock fallback
-    const result = await ingestEventbriteEvents(apiKey, 'New York');
-
-    // Update ingestion tracking
-    await db
-      .update(ingestionSources)
-      .set({
-        lastSyncedAt: new Date(),
-        syncStatus: 'active',
-        errorMessage: null,
-      })
-      .where(eq(ingestionSources.type, 'eventbrite_api'));
+    await updateIngestionSourceStatus('eventbrite_api', 'active');
 
     return {
-      eventsUpserted: (result.inserted || 0) + (result.updated || 0),
-      eventsSkipped: 0,
-      errors: result.errors || 0,
+      eventsUpserted: (result.inserted ?? 0) + (result.updated ?? 0),
+      eventsSkipped: result.skipped ?? 0,
+      errors: result.errors ?? 0,
       durationMs: Date.now() - startTime,
     };
-  } catch (error) {
-    // Mark ingestion as errored
-    await db
-      .update(ingestionSources)
-      .set({
-        syncStatus: 'error',
-        errorMessage: String(error),
-      })
-      .where(eq(ingestionSources.type, 'eventbrite_api'));
-
-    throw error;
+  } catch (err) {
+    console.error('[Eventbrite] Pipeline failed:', err);
+    await updateIngestionSourceStatus('eventbrite_api', 'error', String(err));
+    throw err;
   }
 }

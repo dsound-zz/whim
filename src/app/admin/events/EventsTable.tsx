@@ -13,6 +13,7 @@ const getSourceAbbr = (source: string) => {
   if (source.includes('songkick')) return 'SK';
   if (source.includes('ical')) return 'ICAL';
   if (source.includes('email')) return 'EMAIL';
+  if (source.includes('direct_submission') || source.includes('submission')) return 'SUB';
   return 'OTH';
 };
 
@@ -24,17 +25,20 @@ const getSourceColor = (source: string) => {
   if (source.includes('eventbrite')) return 'bg-red-900 text-red-300';
   if (source.includes('nyc_parks')) return 'bg-green-700 text-green-100';
   if (source.includes('songkick')) return 'bg-pink-700 text-pink-100';
+  if (source.includes('direct_submission') || source.includes('submission')) return 'bg-emerald-900 text-emerald-300';
   return 'bg-gray-800 text-gray-300';
 };
 
 export default function EventsTable({ 
   events, 
   onRowClick,
-  selectedEventId
+  selectedEventId,
+  onApproveEvent
 }: { 
   events: AdminEvent[];
   onRowClick: (event: AdminEvent) => void;
   selectedEventId: string | null;
+  onApproveEvent: (eventId: string) => void;
 }) {
   return (
     <div className="flex-1 overflow-auto bg-zinc-950 border-l border-gray-800">
@@ -46,6 +50,7 @@ export default function EventsTable({
             <th className="px-4 py-3">Venue</th>
             <th className="px-4 py-3">Time</th>
             <th className="px-4 py-3">Price</th>
+            <th className="px-4 py-3">Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-800">
@@ -72,6 +77,21 @@ export default function EventsTable({
               </td>
               <td className="px-4 py-2">
                 {formatPrice(evt.isFree ?? false, evt.priceMin ?? null, evt.priceMax ?? null, evt.ticketUrl ?? null)}
+              </td>
+              <td className="px-4 py-2">
+                {evt.status === 'draft' ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onApproveEvent(evt.id);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold px-2 py-1 rounded transition-colors shadow-sm"
+                  >
+                    Approve
+                  </button>
+                ) : (
+                  <span className="text-gray-500 text-xs">Active</span>
+                )}
               </td>
             </tr>
           ))}

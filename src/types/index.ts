@@ -9,3 +9,6 @@ export interface FetchEventsParams {
   limit: number;
   offset: number;
 }
+
+export * from './submission';
+

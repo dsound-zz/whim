@@ -14,7 +14,7 @@ export async function fetchAdminEvents(): Promise<AdminEvent[]> {
             ORDER BY start_at ASC
           ) as rn
         FROM events
-        WHERE status = 'active'
+        WHERE status = 'active' OR (status = 'draft' AND source_type = 'direct_submission')
       ) ranked
       WHERE rn = 1
       ORDER BY start_at ASC
@@ -24,17 +24,35 @@ export async function fetchAdminEvents(): Promise<AdminEvent[]> {
     const countsRaw = await db.execute(sql`
       SELECT title, venue_name, COUNT(*) as count
       FROM events
-      WHERE status = 'active'
+      WHERE status = 'active' OR (status = 'draft' AND source_type = 'direct_submission')
       GROUP BY title, venue_name
       HAVING COUNT(*) > 1
     `);
 
-    const countMap = new Map();
-    for (const row of countsRaw.rows as any[]) {
+    const countMap = new Map<string, number>();
+    for (const row of countsRaw.rows as unknown as { title: string; venue_name: string | null; count: string }[]) {
       countMap.set(`${row.title}|${row.venue_name}`, parseInt(row.count, 10));
     }
 
-    const data: AdminEvent[] = dedupedRaw.rows.map((row: any) => {
+    const data: AdminEvent[] = (dedupedRaw.rows as unknown as {
+      id: string;
+      title: string;
+      venue_name: string | null;
+      address: string | null;
+      lat: number | null;
+      lng: number | null;
+      start_at: string;
+      end_at: string | null;
+      is_free: boolean | null;
+      price_min: number | null;
+      price_max: number | null;
+      ticket_url: string | null;
+      source_type: string;
+      category: string | null;
+      status: string | null;
+      is_verified: boolean | null;
+      confidence_score: number | null;
+    }[]).map((row) => {
       const moreDates = (countMap.get(`${row.title}|${row.venue_name}`) || 1) - 1;
       return {
         id: row.id,

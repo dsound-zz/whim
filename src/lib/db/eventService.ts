@@ -2,6 +2,7 @@ import { db } from '@/db';
 import { events } from '@/db/schema';
 import { and, eq, gte, lte, count } from 'drizzle-orm';
 import type { FetchEventsParams } from '@/types';
+import crypto from 'crypto';
 
 export async function fetchEventsNearLocation(params: FetchEventsParams) {
   const conditions = [
@@ -57,4 +58,52 @@ export async function updateEventStatus(
     .set({ status, updatedAt: new Date() })
     .where(eq(events.id, id));
 }
+
+export async function insertDraftEvent(payload: {
+  title: string;
+  venueName: string;
+  address: string;
+  startAt: Date;
+  ticketUrl: string;
+  submitterEmail: string;
+  lat: number | null;
+  lng: number | null;
+}) {
+  const { submitterEmail, ...eventData } = payload;
+  const externalId = `submission_${crypto.randomUUID()}`;
+
+  const [newEvent] = await db
+    .insert(events)
+    .values({
+      externalId,
+      sourceType: 'direct_submission',
+      title: eventData.title,
+      venueName: eventData.venueName,
+      address: eventData.address,
+      startAt: eventData.startAt,
+      ticketUrl: eventData.ticketUrl,
+      lat: eventData.lat,
+      lng: eventData.lng,
+      status: 'draft',
+      confidenceScore: 1.0,
+      isVerified: false,
+      rawSource: {
+        submitterEmail,
+        submittedAt: new Date().toISOString(),
+        ...eventData,
+      },
+    })
+    .returning();
+
+  return newEvent;
+}
+
+export async function publishDraftEvent(eventId: string): Promise<void> {
+  await db
+    .update(events)
+    .set({ status: 'active', updatedAt: new Date() })
+    .where(eq(events.id, eventId));
+}
+
+
 

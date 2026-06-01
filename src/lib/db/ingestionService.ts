@@ -8,7 +8,7 @@
 
 import { db } from '@/db';
 import { ingestionSources } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 export type IngestionSyncStatus = 'active' | 'paused' | 'error';
 
@@ -47,5 +47,43 @@ export async function updateIngestionSourceStatus(
     }
   } catch (error) {
     console.error(`[IngestionService] Failed to update status for ${sourceType}:`, error);
+  }
+}
+
+/**
+ * Fetches all active ingestion sources for Eventbrite.
+ * This is used to iterate and fetch targeted events.
+ */
+export async function getActiveEventbriteSources() {
+  return await db
+    .select()
+    .from(ingestionSources)
+    .where(
+      and(
+        eq(ingestionSources.type, 'eventbrite_api'),
+        eq(ingestionSources.syncStatus, 'active')
+      )
+    );
+}
+
+/**
+ * Updates an ingestion source record by its specific ID.
+ */
+export async function updateIngestionSourceStatusById(
+  id: string,
+  syncStatus: IngestionSyncStatus,
+  errorMessage?: string | null
+): Promise<void> {
+  try {
+    await db
+      .update(ingestionSources)
+      .set({
+        lastSyncedAt: new Date(),
+        syncStatus,
+        errorMessage: errorMessage ?? null,
+      })
+      .where(eq(ingestionSources.id, id));
+  } catch (error) {
+    console.error(`[IngestionService] Failed to update status for source ID ${id}:`, error);
   }
 }

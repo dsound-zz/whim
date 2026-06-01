@@ -9,9 +9,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const apiKey = process.env.EVENTBRITE_API_KEY; // Optional for MVP due to mock fallback
-    
-    const results = await ingestEventbriteEvents(apiKey, 'New York');
+    const apiKey = process.env.EVENTBRITE_API_KEY;
+
+    const results = await ingestEventbriteEvents(apiKey);
 
     return NextResponse.json({ success: true, results });
   } catch (error: any) {

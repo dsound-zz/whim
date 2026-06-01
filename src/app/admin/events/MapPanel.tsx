@@ -17,6 +17,7 @@ const getSourceColorHex = (source: string) => {
   if (source.includes('nyc_parks')) return '#15803d'; 
   if (source.includes('songkick')) return '#be185d';
   if (source.includes('ical')) return '#22c55e'; 
+  if (source.includes('direct_submission') || source.includes('submission')) return '#10b981';
   return '#6b7280'; 
 };
 

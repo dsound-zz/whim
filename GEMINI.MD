@@ -217,16 +217,42 @@ Phase 3 — Refactoring, Rate Limiting, Multi-City, and SeatGeek (completed 2026
 - **Unified Ingestion Script**: Replaced the shell script `sync-all.sh` with a cross-platform TypeScript orchestrator (`scripts/sync-all.ts` + `sync:all` npm command) that runs all scrapers, sync jobs, enrichment, and cleanup sequentially.
 - **Mapbox Clustering Optimization**: Adjusted Mapbox GL JS clustering parameters in `MapPanel.tsx` (`clusterMaxZoom` to 12, and `clusterRadius` to 30) so that clustered events break out into individual markers sooner.
 
-Next up: Venue portal (claim listing, submit events, view analytics). Then: Deploy integrity check and syncs as Railway crons.
+Phase 4 — Venue Portal & Direct Submission Slice (completed 2026-06-01):
+- **Database Schema & Service Integration**: Added `'direct_submission'` source type to the Postgres `source_type` pgEnum and applied the migration to Neon. Implemented the `insertDraftEvent` database service function to persist submissions as drafts, storing submitter email and metadata inside `rawSource`. Added `publishDraftEvent` service function to set status from `'draft'` to `'active'`.
+- **Validation**: Defined strict Zod validation schema `VenueSubmissionSchema` in `src/types/submission.ts` to enforce payload requirements.
+- **API routes**:
+  - Built the Next.js API route handler at `/api/v1/submit-event` that validates payloads, geocodes addresses using the central Mapbox geocoder, and saves the draft event.
+  - Built the secure Next.js API route handler at `/api/v1/admin/events/[id]/publish` that transitions draft events to active.
+- **Proxy Rate Limiting & Auth**: Added public client IP rate limiting (5 submissions per 10 minutes) for `/api/v1/submit-event` within `src/proxy.ts` (Next.js 16 custom middleware). Secured `/api/v1/admin/*` paths to require active B2B API keys of `pro` or `admin` tier without incrementing client rate limits.
+- **Submission & Admin UI**:
+  - Built a premium, stateful glassmorphic event submission client form (`EventSubmissionForm.tsx`) and layout wrapper at `/submit` with transition states, inline field errors, and a clean checkmark success view.
+  - Updated the Admin Events dashboard to support both Active and Pending Submissions filtering (with SQL queries modified in `actions.ts`). Added an Action column and "Approve" button to `EventsTable.tsx` to publish drafts with optimistic UI updates. Custom green coloring and `SUB` formatting applied to direct submissions on the table and Mapbox panel.
+
+Next up: Remaining venue portal features (claim listing, view analytics). Add Meetup.com, NYC.gov, and iCal feed ingestion for further event type coverage. Deploy integrity check and syncs as Railway crons.
+
+Phase 5 — Data Pipeline Improvements & Coverage Expansion (completed 2026-06-01):
+- **Removed SeatGeek mock data fallback**: When `SEATGEEK_CLIENT_ID` is absent, `ingestSeatGeekEvents()` now returns `{ inserted: 0 }` and logs a warning rather than injecting two hardcoded fake events into the database. The dead `ingestMockSeatGeekData()` function was also removed from `src/lib/seatgeek/client.ts`.
+- **Eventbrite city-wide search**: Rewrote `src/lib/eventbrite/client.ts` to use the `/events/search/` endpoint with `location.latitude/longitude` + `location.within=30km` instead of the previous per-organizer/venue config approach. This unlocks all public live events in NYC — community events, art gallery openings, book readings, food/drink events, comedy shows, workshops, fitness classes, and film screenings — without requiring any pre-registration. Paginated up to 5 pages × 50 events. The `src/lib/ingestion/eventbrite.ts` runner was simplified to delegate directly to the new client. Skips `online_event=true` rows (no geocodable venue). Fixed `src/app/api/ingest/eventbrite/route.ts` to match the new single-argument signature.
+- **Resident Advisor scraper rewrite** (`scripts/scrape-ra.ts`): Full rewrite addressing all critical issues from the prior version:
+  - **Date parsing**: Reads actual event dates from RA's `data-pw-date` section headers (with fallback to tonight at 11 PM for nightlife events, which is a better default than `new Date()`).
+  - **Unified geocoding**: Now uses `geocodeWithMapbox()` from `src/lib/utils/geocode.ts` (same NYC bounding box as the rest of the pipeline) instead of a raw Mapbox call with a wider bbox.
+  - **Title normalization**: All titles pass through `normalizeEventTitle()`.
+  - **Category classification**: All events pass through `classifyEventCategory()` with `skipLlmFallback: true` (RA is nightlife/music; keyword scan suffices).
+  - **Cross-platform dedup**: Full `findCanonicalMatch()` + `mergeIntoCanonical()` integration before insert.
+  - **Confidence score**: Set to `0.6` (scraped, no structured API).
+  - **Ingestion tracking**: Updates `ingestion_sources` table via `updateIngestionSourceStatus()`.
+  - **Pipeline integration**: Added `scrape:ra` npm script and added "Resident Advisor Scraper" step to `scripts/sync-all.ts` after Songkick.
 
 ## What is NOT in scope yet
 
 - Venue portal (claim listing, submit events, view analytics) — **next priority**
 - Email parsing pipeline (LLM-based, for long-tail venues)
+- Meetup.com API integration (community events, run clubs, book clubs, workshops)
+- NYC.gov Events Calendar ingestion
+- iCal/ICS feed parser for venue-direct feeds (bookstores, theaters, cafés)
 - Friend coordination / social layer
 - Multi-city expansion (fully threading CityConfig through all ingestors and API endpoints)
 - Payment/billing infrastructure
-- Resident Advisor scraper (planned for Phase 4)
 
 ## Key design decisions (from initial planning)
 

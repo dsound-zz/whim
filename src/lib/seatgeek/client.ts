@@ -92,8 +92,8 @@ export async function ingestSeatGeekEvents(
   options: { lat?: number; lon?: number; range?: string; maxPages?: number } = {}
 ): Promise<{ inserted: number; updated: number; skipped: number; errors: number }> {
   if (!clientId) {
-    console.warn('[SeatGeek] SEATGEEK_CLIENT_ID is not set. Falling back to mock data.');
-    return ingestMockSeatGeekData();
+    console.warn('[SeatGeek] SEATGEEK_CLIENT_ID is not set. Skipping SeatGeek ingestion — no mock data will be written.');
+    return { inserted: 0, updated: 0, skipped: 0, errors: 0 };
   }
 
   const {
@@ -275,74 +275,4 @@ async function processSeatGeekPayload(
   }
 
   return results;
-}
-
-async function ingestMockSeatGeekData(): Promise<{ inserted: number; updated: number; skipped: number; errors: number }> {
-  console.log('[SeatGeek] Ingesting mock SeatGeek data for NYC...');
-  const mockEvents: SeatGeekEvent[] = [
-    {
-      id: 990001,
-      title: 'Knicks vs Celtics (SeatGeek Mock)',
-      short_title: 'Knicks vs Celtics',
-      description: 'A thrilling NBA matchup at Madison Square Garden.',
-      datetime_utc: new Date(Date.now() + 86400000).toISOString(),
-      datetime_local: new Date(Date.now() + 86400000).toISOString(),
-      venue: {
-        name: 'Madison Square Garden',
-        address: '4 Pennsylvania Plaza',
-        city: 'New York',
-        state: 'NY',
-        postal_code: '10001',
-        location: { lat: 40.7505, lon: -73.9934 }
-      },
-      performers: [
-        {
-          name: 'New York Knicks',
-          image: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800&auto=format&fit=crop&q=60',
-          url: 'https://seatgeek.com/new-york-knicks-tickets'
-        }
-      ],
-      url: 'https://seatgeek.com/mock-knicks-celtics',
-      stats: {
-        lowest_price: 85,
-        highest_price: 350,
-        average_price: 180
-      },
-      type: 'nba',
-      taxonomies: [{ name: 'sports' }]
-    },
-    {
-      id: 990002,
-      title: 'LCD Soundsystem (SeatGeek Mock)',
-      short_title: 'LCD Soundsystem',
-      description: 'Live in concert at Brooklyn Steel.',
-      datetime_utc: new Date(Date.now() + 172800000).toISOString(),
-      datetime_local: new Date(Date.now() + 172800000).toISOString(),
-      venue: {
-        name: 'Brooklyn Steel',
-        address: '319 Frost St',
-        city: 'Brooklyn',
-        state: 'NY',
-        postal_code: '11222',
-        location: { lat: 40.7196, lon: -73.9387 }
-      },
-      performers: [
-        {
-          name: 'LCD Soundsystem',
-          image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=60',
-          url: 'https://seatgeek.com/lcd-soundsystem-tickets'
-        }
-      ],
-      url: 'https://seatgeek.com/mock-lcd-soundsystem',
-      stats: {
-        lowest_price: 65,
-        highest_price: 120,
-        average_price: 85
-      },
-      type: 'concert',
-      taxonomies: [{ name: 'concert' }]
-    }
-  ];
-
-  return processSeatGeekPayload(mockEvents);
 }

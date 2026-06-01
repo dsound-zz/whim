@@ -24,6 +24,7 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "rss",
   "email",
   "submission",
+  "direct_submission",
   "scrape",
   "ra_scrape",
   "nyc_parks_api",

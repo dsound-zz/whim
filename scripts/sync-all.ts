@@ -7,6 +7,7 @@ const SCRIPTS = [
   { name: 'NYC Parks', command: 'sync:nyc-parks' },
   { name: 'Dice Scraper', command: 'scrape:dice' },
   { name: 'Songkick Scraper', command: 'scrape:songkick' },
+  { name: 'Resident Advisor Scraper', command: 'scrape:ra' },
   { name: 'Bandsintown Enrichment', command: 'enrich:bandsintown' },
   { name: 'Event Cleanup', command: 'cleanup:events' },
 ];

@@ -14,14 +14,63 @@ export default function AdminEventsPage() {
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<'all' | 'this_week' | 'tonight'>('all');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'draft'>('active');
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  // Derive sorted list of unique source types from the full loaded event list
+  const availableSources = Array.from(
+    new Set(events.map((e) => e.sourceType))
+  ).sort();
 
   useEffect(() => {
     fetchAdminEvents().then(setEvents);
   }, []);
 
+  const handleApproveEvent = async (eventId: string) => {
+    // Optimistically update status to active (removing it from draft view)
+    setEvents((prev) =>
+      prev.map((e) => (e.id === eventId ? { ...e, status: 'active' } : e))
+    );
+
+    // Clear selection if the approved event is currently active selection
+    if (selectedEventId === eventId) {
+      setSelectedEventId(null);
+    }
+
+    try {
+      const response = await fetch(`/api/v1/admin/events/${eventId}/publish`, {
+        method: 'POST',
+        headers: {
+          'x-api-key': 'test-key-whim',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to publish event');
+      }
+    } catch (error) {
+      console.error('Error approving event:', error);
+      // Revert optimistic update
+      setEvents((prev) =>
+        prev.map((e) => (e.id === eventId ? { ...e, status: 'draft' } : e))
+      );
+      alert('Failed to approve event. Please check connection and try again.');
+    }
+  };
+
   const filteredEvents = events.filter((e) => {
-    // 1. Date Filter
+    // 0. Status filter
+    if (statusFilter === 'active') {
+      if (e.status !== 'active') return false;
+    } else if (statusFilter === 'draft') {
+      if (e.status !== 'draft' || e.sourceType !== 'direct_submission') return false;
+    }
+
+    // 1. Source filter
+    if (sourceFilter !== 'all' && e.sourceType !== sourceFilter) return false;
+
+    // 2. Date filter
     if (dateFilter !== 'all') {
       const eventDate = new Date(e.startAt);
       const today = new Date();
@@ -38,20 +87,28 @@ export default function AdminEventsPage() {
       }
     }
 
-    // 2. Search Filter
+    // 3. Search filter (operates on the debounced committed query)
     if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return e.title.toLowerCase().includes(q) || (e.venueName || "").toLowerCase().includes(q);
+    const lowercaseQuery = searchQuery.toLowerCase();
+    return (
+      e.title.toLowerCase().includes(lowercaseQuery) ||
+      (e.venueName || "").toLowerCase().includes(lowercaseQuery)
+    );
   });
 
   return (
     <div className="flex flex-col h-screen w-full bg-black text-gray-200 overflow-hidden font-sans">
       <StatsBar events={filteredEvents} />
-      <FilterBar 
-        searchQuery={searchQuery} 
+      <FilterBar
+        searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         dateFilter={dateFilter}
-        setDateFilter={setDateFilter} 
+        setDateFilter={setDateFilter}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        sourceFilter={sourceFilter}
+        setSourceFilter={setSourceFilter}
+        availableSources={availableSources}
       />
       
       <div className="flex flex-1 overflow-hidden">
@@ -64,6 +121,7 @@ export default function AdminEventsPage() {
           events={filteredEvents} 
           selectedEventId={selectedEventId}
           onRowClick={(e) => setSelectedEventId(prev => prev === e.id ? null : e.id)} 
+          onApproveEvent={handleApproveEvent}
         />
       </div>
 
