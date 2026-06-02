@@ -1,8 +1,9 @@
 import { db } from '@/db';
 import { events } from '@/db/schema';
-import { and, eq, gte, lte, count } from 'drizzle-orm';
+import { and, eq, gte, lte, count, sql } from 'drizzle-orm';
 import type { FetchEventsParams } from '@/types';
 import crypto from 'crypto';
+import { getTimeframeRange } from '@/lib/utils/date';
 
 export async function fetchEventsNearLocation(params: FetchEventsParams) {
   const conditions = [
@@ -11,14 +12,20 @@ export async function fetchEventsNearLocation(params: FetchEventsParams) {
     gte(events.lng, params.minLng),
     lte(events.lng, params.maxLng),
     eq(events.status, 'active'),
+    sql`"end_at" > now() OR ("end_at" IS NULL AND "start_at" > now() - INTERVAL '4 hours')`
   ];
 
-  if (params.startDate) {
-    conditions.push(gte(events.startAt, params.startDate));
-  }
-
-  if (params.endDate) {
-    conditions.push(lte(events.startAt, params.endDate));
+  if (params.timeframe) {
+    const { start, end } = getTimeframeRange(params.timeframe);
+    conditions.push(gte(events.startAt, start));
+    conditions.push(lte(events.startAt, end));
+  } else {
+    if (params.startDate) {
+      conditions.push(gte(events.startAt, params.startDate));
+    }
+    if (params.endDate) {
+      conditions.push(lte(events.startAt, params.endDate));
+    }
   }
 
   if (params.category) {

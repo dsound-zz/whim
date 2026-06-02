@@ -33,6 +33,9 @@ export async function GET(request: NextRequest) {
   // Parse category (optional)
   const category = searchParams.get('category') || undefined;
 
+  // Parse timeframe
+  const timeframe = searchParams.get('timeframe') as 'tonight' | 'next_2_days' | 'this_week' | undefined;
+
   // Parse date range (optional)
   const startDateStr = searchParams.get('startDate');
   const endDateStr = searchParams.get('endDate');
@@ -95,6 +98,7 @@ export async function GET(request: NextRequest) {
       maxLng,
       startDate,
       endDate,
+      timeframe,
       category,
       limit,
       offset,

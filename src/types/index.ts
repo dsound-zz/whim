@@ -5,6 +5,7 @@ export interface FetchEventsParams {
   maxLng: number;
   startDate?: Date;
   endDate?: Date;
+  timeframe?: 'tonight' | 'next_2_days' | 'this_week';
   category?: string;
   limit: number;
   offset: number;
