@@ -34,7 +34,7 @@ export async function ingestTicketmasterEvents(apiKey: string | undefined, city 
   const allResults = { inserted: 0, updated: 0, errors: 0, skipped: 0 };
 
   for (let pageNumber = 0; pageNumber < maxPages; pageNumber++) {
-    const searchUrl = `/events.json?city=${encodeURIComponent(city)}&size=${pageSize}&page=${pageNumber}`;
+    const searchUrl = `/events.json?city=${encodeURIComponent(city)}&size=${pageSize}&page=${pageNumber}&expand=priceRanges`;
     
     try {
       const data = await fetchTicketmaster(searchUrl, apiKey);

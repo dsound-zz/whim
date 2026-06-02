@@ -228,7 +228,7 @@ Phase 4 — Venue Portal & Direct Submission Slice (completed 2026-06-01):
   - Built a premium, stateful glassmorphic event submission client form (`EventSubmissionForm.tsx`) and layout wrapper at `/submit` with transition states, inline field errors, and a clean checkmark success view.
   - Updated the Admin Events dashboard to support both Active and Pending Submissions filtering (with SQL queries modified in `actions.ts`). Added an Action column and "Approve" button to `EventsTable.tsx` to publish drafts with optimistic UI updates. Custom green coloring and `SUB` formatting applied to direct submissions on the table and Mapbox panel.
 
-Next up: Remaining venue portal features (claim listing, view analytics). Add Meetup.com, NYC.gov, and iCal feed ingestion for further event type coverage. Deploy integrity check and syncs as Railway crons.
+Next up: Remaining venue portal features (claim listing, view analytics). Add Meetup.com and NYC.gov ingestion for further event type coverage. Deploy integrity check and syncs as Railway crons.
 
 Phase 5 — Data Pipeline Improvements & Coverage Expansion (completed 2026-06-01):
 - **Removed SeatGeek mock data fallback**: When `SEATGEEK_CLIENT_ID` is absent, `ingestSeatGeekEvents()` now returns `{ inserted: 0 }` and logs a warning rather than injecting two hardcoded fake events into the database. The dead `ingestMockSeatGeekData()` function was also removed from `src/lib/seatgeek/client.ts`.
@@ -243,13 +243,27 @@ Phase 5 — Data Pipeline Improvements & Coverage Expansion (completed 2026-06-0
   - **Ingestion tracking**: Updates `ingestion_sources` table via `updateIngestionSourceStatus()`.
   - **Pipeline integration**: Added `scrape:ra` npm script and added "Resident Advisor Scraper" step to `scripts/sync-all.ts` after Songkick.
 
+Phase 6 — iCal Ingestion & Ticket Price Normalization (completed 2026-06-01):
+- **iCal Feed Ingestion Pipeline**:
+  - Built a robust iCal parser (`src/lib/ical/client.ts`) utilizing `node-ical` to fetch remote `.ics` URLs, validate content header/body to reject HTML pages, normalize `VEVENT` data to the Whim schema, and resolve recurrence rules by expanding instances over a rolling 60-day window.
+  - Implemented the database integration worker (`src/lib/ical/ingest.ts`) supporting ingestion-level deduplication and updating `ingestion_sources` sync status.
+  - Added standalone runner script `scripts/sync-ical.ts` supporting `--url` for ad-hoc feeds, and seed script `scripts/seed-ical-sources.ts` which seeds the City Parks Foundation feed (`https://www.cityparksfoundation.org/events/?ical=1`).
+  - Added `sync:ical` and `seed:ical-sources` npm scripts.
+  - Updated `scripts/sync-all.ts` orchestrator to run iCal syncing.
+- **Eventbrite Ticket Price Extraction & Backfill**:
+  - Updated the Eventbrite client (`src/lib/eventbrite/client.ts`) to extract minimum and maximum ticket prices using Expanded `ticket_availability` fields (`minimum_ticket_price.major_value` / `maximum_ticket_price.major_value`).
+  - Added a backfill script (`scripts/backfill-eventbrite-prices.ts` + `npm run backfill:eb-prices`) which updated 448 Eventbrite events in the database with accurate price ranges and `isFree` statuses.
+- **Ticketmaster Price API Enhancement**:
+  - Appended `&expand=priceRanges` to Ticketmaster API search requests to fetch and persist accurate prices for commercial events.
+- **Development Tooling & Scripts**:
+  - Fixed a TypeScript compilation issue in `tsconfig.scripts.json` by adding `"moduleResolution": "node"` to prevent CommonJS import resolution failures for build/seed scripts.
+
 ## What is NOT in scope yet
 
 - Venue portal (claim listing, submit events, view analytics) — **next priority**
 - Email parsing pipeline (LLM-based, for long-tail venues)
 - Meetup.com API integration (community events, run clubs, book clubs, workshops)
 - NYC.gov Events Calendar ingestion
-- iCal/ICS feed parser for venue-direct feeds (bookstores, theaters, cafés)
 - Friend coordination / social layer
 - Multi-city expansion (fully threading CityConfig through all ingestors and API endpoints)
 - Payment/billing infrastructure

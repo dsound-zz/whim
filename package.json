@@ -27,7 +27,10 @@
     "db:sync-events": "tsx -r dotenv/config scripts/sync-events-with-venues.ts",
     "sync:all": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-all.ts",
     "sync:seatgeek": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-seatgeek.ts",
-    "reset:api-counters": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/reset-api-key-counters.ts"
+    "reset:api-counters": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/reset-api-key-counters.ts",
+    "sync:ical": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-ical.ts",
+    "seed:ical-sources": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/seed-ical-sources.ts",
+    "backfill:eb-prices": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-eventbrite-prices.ts"
   },
   "dependencies": {
     "@emnapi/core": "^1.10.0",
@@ -44,6 +47,7 @@
     "drizzle-orm": "^0.45.2",
     "mapbox-gl": "^3.24.0",
     "next": "16.2.6",
+    "node-ical": "^0.26.1",
     "playwright": "^1.60.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

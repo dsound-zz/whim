@@ -8,6 +8,7 @@ const SCRIPTS = [
   { name: 'Dice Scraper', command: 'scrape:dice' },
   { name: 'Songkick Scraper', command: 'scrape:songkick' },
   { name: 'Resident Advisor Scraper', command: 'scrape:ra' },
+  { name: 'iCal Feeds', command: 'sync:ical' },
   { name: 'Bandsintown Enrichment', command: 'enrich:bandsintown' },
   { name: 'Event Cleanup', command: 'cleanup:events' },
 ];

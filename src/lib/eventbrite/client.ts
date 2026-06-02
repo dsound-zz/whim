@@ -200,6 +200,17 @@ async function processEventbritePayload(
         platformTaxonomy: { ebriteCategory, ebriteFormat },
       });
 
+      // Extract price data from the ticket_availability expand.
+      // major_value is a string (e.g. "17.85"); parse to float.
+      const ticketAvailability = ebEvent.ticket_availability as Record<string, unknown> | undefined;
+      const minPriceStr = (ticketAvailability?.minimum_ticket_price as Record<string, unknown> | undefined)?.major_value;
+      const maxPriceStr = (ticketAvailability?.maximum_ticket_price as Record<string, unknown> | undefined)?.major_value;
+      const parsedPriceMin = minPriceStr ? parseFloat(minPriceStr as string) : null;
+      const parsedPriceMax = maxPriceStr ? parseFloat(maxPriceStr as string) : null;
+
+      // Event is free if explicitly flagged OR if the min price is 0
+      const isEventFree = (ebEvent.is_free === true) || (parsedPriceMin !== null && parsedPriceMin === 0);
+
       const eventToInsert = {
         externalId: ebEvent.id,
         sourceType: 'eventbrite_api' as const,
@@ -213,15 +224,17 @@ async function processEventbritePayload(
         address: venueData?.address?.localized_address_display || null,
         lat: parsedLat,
         lng: parsedLng,
-        isFree: ebEvent.is_free ?? false,
-        priceMin: null as number | null,
-        priceMax: null as number | null,
+        isFree: isEventFree,
+        priceMin: isEventFree ? null : parsedPriceMin,
+        priceMax: isEventFree ? null : parsedPriceMax,
+        currency: (ebEvent.currency as string) ?? 'USD',
         ticketUrl: ebEvent.url,
         platform: 'Eventbrite',
         confidenceScore: 0.9,
         rawSource: ebEvent,
         status: (ebEvent.status === 'live' ? 'active' : 'cancelled') as 'active' | 'cancelled',
       };
+
 
       const dedupCandidate: IncomingEventForDedup = {
         externalId: eventToInsert.externalId,
