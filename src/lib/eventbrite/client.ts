@@ -128,7 +128,17 @@ export async function ingestEventbriteEvents(apiKey: string | undefined): Promis
 
       // Polite delay between pages
       await new Promise((resolve) => setTimeout(resolve, 300));
-    } catch (err) {
+    } catch (err: any) {
+      const errorMessage = err?.message || String(err);
+      // The /events/search/ endpoint was deprecated by Eventbrite (Dec 2019)
+      // and now returns 404. Log a clear warning rather than crashing the pipeline.
+      if (errorMessage.includes('404')) {
+        console.warn(
+          `[Eventbrite] API returned 404 — the /events/search/ endpoint is deprecated. ` +
+          `Eventbrite ingestion is non-functional until migrated to a Playwright scraper or organization-based API.`
+        );
+        break;
+      }
       console.error(`[Eventbrite] Failed on page ${pageNumber}:`, err);
       // Keep partial results if we've already succeeded on earlier pages
       if (pageNumber > 1) break;

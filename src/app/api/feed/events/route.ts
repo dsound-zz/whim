@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
   const lngStr = searchParams.get("lng");
   // Default timeframe instead of 'date' to align with v1 API
   const timeframe = (searchParams.get("timeframe") || "tonight") as 'tonight' | 'next_2_days' | 'this_week';
+  const category = searchParams.get("category") || undefined;
+  const search = searchParams.get("search") || undefined;
   const limit = parseInt(searchParams.get("limit") || "100", 10);
   const offset = parseInt(searchParams.get("offset") || "0", 10);
 
@@ -31,6 +33,8 @@ export async function GET(request: NextRequest) {
       minLng,
       maxLng,
       timeframe,
+      category,
+      search,
       limit,
       offset,
     });

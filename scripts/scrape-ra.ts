@@ -1,18 +1,12 @@
 /**
- * Resident Advisor (RA) scraper.
+ * Resident Advisor (RA) GraphQL scraper.
  *
- * Scrapes ra.co/events/us/newyork for NYC club nights, DJ sets, and
- * electronic music events. RA specializes in the underground nightlife
- * scene that Ticketmaster, SeatGeek, and Dice don't fully cover.
+ * Replaces the previous Playwright DOM scraper, which was blocked by
+ * DataDome CAPTCHA. RA's GraphQL API (https://ra.co/graphql) returns
+ * structured event data directly — no browser rendering required.
  *
- * Key improvements over the previous version:
- * - Parses actual event dates from RA's grouped date-section headers
- * - Uses the unified geocodeWithMapbox() utility (same bbox as the rest of the pipeline)
- * - Runs title normalization and category classification on every event
- * - Runs cross-platform dedup before insert
- * - Sets confidenceScore: 0.6 (scraped, no structured API)
- * - Tracks ingestion status in ingestion_sources table
- * - Integrated into the sync:all orchestrator pipeline
+ * NYC area ID = 8 (confirmed via the /areas query).
+ * Paginates up to MAX_PAGES × PAGE_SIZE events per sync.
  */
 
 import * as dotenv from 'dotenv';
@@ -26,6 +20,7 @@ async function main(): Promise<void> {
   const { normalizeEventTitle } = await import('../src/lib/utils/normalizeEventTitle');
   const { classifyEventCategory } = await import('../src/lib/utils/categorizeEvent');
   const { geocodeWithMapbox } = await import('../src/lib/utils/geocode');
+  const { isWithinNYC } = await import('../src/lib/ingestion/location-validation');
   const { updateIngestionSourceStatus } = await import('../src/lib/db/ingestionService');
   const {
     findCanonicalMatch,
@@ -33,328 +28,328 @@ async function main(): Promise<void> {
     buildInitialTicketUrls,
   } = await import('../src/lib/utils/deduplicateAtIngestion');
 
-  console.log('[RA] Starting scrape:', new Date().toISOString());
+  console.log('[RA] Starting GraphQL scrape:', new Date().toISOString());
 
-  const { chromium } = await import('playwright-extra');
-  const { default: stealth } = await import('puppeteer-extra-plugin-stealth');
+  // ─── Config ────────────────────────────────────────────────────────────────
 
-  chromium.use(stealth());
+  const RA_GRAPHQL_URL = 'https://ra.co/graphql';
+  const RA_NYC_AREA_ID = 8;
+  const PAGE_SIZE = 50;
+  const MAX_PAGES = 6; // 300 events max per sync
 
-  const browser = await chromium.launch({ headless: true });
+  // Fetch events covering the next 30 days
+  const today = new Date();
+  const thirtyDaysOut = new Date(today);
+  thirtyDaysOut.setDate(today.getDate() + 30);
+  const dateFrom = today.toISOString().split('T')[0];
+  const dateTo = thirtyDaysOut.toISOString().split('T')[0];
 
-  const results = { inserted: 0, updated: 0, skipped: 0, errors: 0 };
+  const GRAPHQL_QUERY = `
+    query GET_DEFAULT_EVENTS_LISTING(
+      $filters: FilterInputDtoInput
+      $pageSize: Int
+      $page: Int
+      $sort: SortInputDtoInput
+    ) {
+      eventListings(
+        filters: $filters
+        pageSize: $pageSize
+        page: $page
+        sort: $sort
+      ) {
+        data {
+          id
+          event {
+            id
+            title
+            date
+            startTime
+            endTime
+            contentUrl
+            flyerFront
+            images {
+              filename
+            }
+            venue {
+              name
+              address
+              contentUrl
+            }
+          }
+        }
+        totalResults
+      }
+    }
+  `;
 
-  try {
-    const context = await browser.newContext({
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  // ─── Fetch helper ──────────────────────────────────────────────────────────
+
+  async function fetchRAEvents(page: number): Promise<{
+    data: RaEventListing[];
+    totalResults: number;
+  }> {
+    const response = await fetch(RA_GRAPHQL_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Referer: 'https://ra.co/events/us/newyork',
+        Origin: 'https://ra.co',
+      },
+      body: JSON.stringify({
+        operationName: 'GET_DEFAULT_EVENTS_LISTING',
+        variables: {
+          filters: {
+            areas: { eq: RA_NYC_AREA_ID },
+            listingDate: { gte: dateFrom, lte: dateTo },
+          },
+          pageSize: PAGE_SIZE,
+          page,
+          sort: { scoringDate: { order: 'DESCENDING' } },
+        },
+        query: GRAPHQL_QUERY,
+      }),
     });
 
-    const page = await context.newPage();
-    console.log('[RA] Navigating to RA NYC events...');
-    await page.goto('https://ra.co/events/us/newyork', { waitUntil: 'domcontentloaded' });
-
-    // RA renders events grouped under date section headers. We scroll to load more.
-    console.log('[RA] Scrolling to load more events...');
-    for (let scrollIndex = 0; scrollIndex < 5; scrollIndex++) {
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(2000);
+    if (!response.ok) {
+      throw new Error(`RA GraphQL request failed: HTTP ${response.status}`);
     }
 
-    console.log('[RA] Extracting event data...');
+    const json = await response.json() as {
+      data?: { eventListings?: { data: RaEventListing[]; totalResults: number } };
+      errors?: { message: string }[];
+    };
 
-    /**
-     * Extracts events grouped under RA's date section headers.
-     * RA renders events as:
-     *   <section data-pw-date="2024-06-01">
-     *     <article data-tracking-id="event">...</article>
-     *     ...
-     *   </section>
-     *
-     * We traverse each section, read the date from the section's data-pw-date
-     * attribute (or a visible date heading), then read all event articles within it.
-     */
-    const rawEvents = await page.evaluate(() => {
-      const extracted: Array<{
-        raEventId: string;
-        title: string;
-        venueName: string;
-        ticketUrl: string;
-        imageUrl: string | null;
-        priceStr: string | null;
-        dateStr: string | null; // ISO date from data-pw-date attribute
-      }> = [];
+    if (json.errors?.length) {
+      throw new Error(`RA GraphQL errors: ${json.errors.map((e) => e.message).join(', ')}`);
+    }
 
-      // RA wraps each day's events in a section with a date attribute or heading
-      // Try multiple selector patterns since RA's markup changes over time
-      const dateSections = document.querySelectorAll(
-        '[data-pw-date], section:has([data-tracking-id="event"])'
-      );
+    return {
+      data: json.data?.eventListings?.data ?? [],
+      totalResults: json.data?.eventListings?.totalResults ?? 0,
+    };
+  }
 
-      if (dateSections.length > 0) {
-        // Modern RA layout: sections with data-pw-date attribute
-        dateSections.forEach((section) => {
-          const dateStr =
-            section.getAttribute('data-pw-date') ||
-            section.querySelector('time')?.getAttribute('datetime') ||
-            null;
+  // ─── Types ─────────────────────────────────────────────────────────────────
 
-          const eventItems = section.querySelectorAll('[data-tracking-id="event"]');
-          eventItems.forEach((item) => {
-            const linkEl = item.querySelector('a[href*="/events/"]');
-            const urlPath = linkEl?.getAttribute('href') || '';
-            const ticketUrl = urlPath ? `https://ra.co${urlPath}` : '';
-            const raEventId = urlPath.split('/').pop() || '';
+  interface RaEventListing {
+    id: string;
+    event: {
+      id: string;
+      title: string;
+      date: string;        // "2026-06-05T00:00:00.000"
+      startTime: string;   // "2026-06-05T22:00:00.000"
+      endTime: string | null;
+      contentUrl: string;  // "/events/2383466"
+      flyerFront: string | null;
+      images: { filename: string }[];
+      venue: {
+        name: string;
+        address: string;   // "52-19 Flushing Ave., Queens, NY 11378 USA"
+        contentUrl: string;
+      };
+    };
+  }
 
-            if (!raEventId || !ticketUrl) return;
+  // ─── Main ingestion loop ───────────────────────────────────────────────────
 
-            const titleEl = item.querySelector('h3, [data-testid="event-title"]');
-            const title = titleEl?.textContent?.trim() || '';
-            if (!title) return;
+  const results = { inserted: 0, updated: 0, skipped: 0, errors: 0 };
+  let totalFetched = 0;
 
-            const venueEl = item.querySelector('[data-testid="event-venue"], .event-venue');
-            const venueName = venueEl?.textContent?.trim() || 'TBA';
-
-            const imgEl = item.querySelector('img');
-            const imageUrl = imgEl?.src || null;
-
-            const textElements = Array.from(item.querySelectorAll('div, span'))
-              .map((el) => el.textContent?.trim())
-              .filter(Boolean) as string[];
-            const priceStr =
-              textElements.find(
-                (text) => text.includes('$') || text.toLowerCase() === 'free'
-              ) || null;
-
-            extracted.push({
-              raEventId,
-              title,
-              venueName,
-              ticketUrl,
-              imageUrl,
-              priceStr,
-              dateStr,
-            });
-          });
-        });
-      } else {
-        // Fallback: flat list of events without date sections — use today's date
-        const today = new Date().toISOString().split('T')[0];
-        const eventItems = document.querySelectorAll('[data-tracking-id="event"]');
-        eventItems.forEach((item) => {
-          const linkEl = item.querySelector('a[href*="/events/"]');
-          const urlPath = linkEl?.getAttribute('href') || '';
-          const ticketUrl = urlPath ? `https://ra.co${urlPath}` : '';
-          const raEventId = urlPath.split('/').pop() || '';
-
-          if (!raEventId || !ticketUrl) return;
-
-          const titleEl = item.querySelector('h3, [data-testid="event-title"]');
-          const title = titleEl?.textContent?.trim() || '';
-          if (!title) return;
-
-          const venueEl = item.querySelector('[data-testid="event-venue"], .event-venue');
-          const venueName = venueEl?.textContent?.trim() || 'TBA';
-
-          const imgEl = item.querySelector('img');
-          const imageUrl = imgEl?.src || null;
-
-          const textElements = Array.from(item.querySelectorAll('div, span'))
-            .map((el) => el.textContent?.trim())
-            .filter(Boolean) as string[];
-          const priceStr =
-            textElements.find(
-              (text) => text.includes('$') || text.toLowerCase() === 'free'
-            ) || null;
-
-          extracted.push({
-            raEventId,
-            title,
-            venueName,
-            ticketUrl,
-            imageUrl,
-            priceStr,
-            dateStr: today,
-          });
-        });
-      }
-
-      return extracted;
-    });
-
-    console.log(`[RA] Extracted ${rawEvents.length} events. Normalizing and upserting...`);
-
-    for (const raw of rawEvents) {
-      if (!raw.title || !raw.raEventId) continue;
+  try {
+    for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+      let listings: RaEventListing[];
+      let totalResults: number;
 
       try {
-        // ─── Date parsing ────────────────────────────────────────────────────
-        // RA events typically start at 11 PM. If we have a date string from the
-        // section header, use it. Otherwise default to tonight at 11 PM.
-        let startAt: Date;
-        if (raw.dateStr) {
-          // Build a datetime: date + 23:00 local time as a reasonable default
-          // RA is nightlife-centric so 11 PM is a better default than midnight
-          startAt = new Date(`${raw.dateStr}T23:00:00`);
-          if (isNaN(startAt.getTime())) {
-            startAt = new Date();
-            startAt.setHours(23, 0, 0, 0);
+        ({ data: listings, totalResults } = await fetchRAEvents(pageNum));
+      } catch (fetchError) {
+        console.error(`[RA] Failed to fetch page ${pageNum}:`, fetchError);
+        if (pageNum === 1) throw fetchError;
+        break;
+      }
+
+      if (listings.length === 0) {
+        console.log(`[RA] No events on page ${pageNum} — stopping.`);
+        break;
+      }
+
+      console.log(
+        `[RA] Page ${pageNum}: ${listings.length} events (${totalResults} total available)`
+      );
+      totalFetched += listings.length;
+
+      for (const listing of listings) {
+        const { event } = listing;
+        if (!event?.id || !event.title) continue;
+
+        try {
+          // ─── Date / time ─────────────────────────────────────────────────
+          const startAt = new Date(event.startTime || event.date);
+          const endAt = event.endTime ? new Date(event.endTime) : null;
+
+          const dateValidation = validateEventDates(startAt, endAt);
+          if (!dateValidation.isValid) {
+            results.skipped++;
+            continue;
           }
-        } else {
-          startAt = new Date();
-          startAt.setHours(23, 0, 0, 0);
-        }
 
-        const dateValidation = validateEventDates(startAt, null);
-        if (!dateValidation.isValid) {
-          console.warn(`[RA] Skipping event ${raw.raEventId}: ${dateValidation.rejectionReason}`);
-          results.skipped++;
-          continue;
-        }
+          // ─── Title ───────────────────────────────────────────────────────
+          const normalizedTitle = normalizeEventTitle(event.title) ?? event.title;
 
-        // ─── Title normalization ─────────────────────────────────────────────
-        const normalizedTitle = normalizeEventTitle(raw.title) ?? raw.title;
+          // ─── Image ───────────────────────────────────────────────────────
+          const imageUrl =
+            event.flyerFront ??
+            event.images?.[0]?.filename ??
+            null;
 
-        // ─── Category classification ──────────────────────────────────────────
-        // RA is nightlife and music. Skip LLM fallback — keyword scan suffices.
-        const category = await classifyEventCategory({
-          title: normalizedTitle,
-          description: null,
-          skipLlmFallback: true,
-        });
+          // ─── Venue & geocoding ────────────────────────────────────────────
+          const venueName = event.venue?.name || 'TBA';
+          const rawAddress = event.venue?.address || null;
 
-        // ─── Price parsing ────────────────────────────────────────────────────
-        let priceMin: number | null = null;
-        let isFree = false;
-        if (raw.priceStr) {
-          if (raw.priceStr.toLowerCase().includes('free')) {
-            isFree = true;
-            priceMin = 0;
-          } else {
-            const priceMatch = raw.priceStr.match(/\$?([\d]+\.?[\d]*)/);
-            if (priceMatch) priceMin = parseFloat(priceMatch[1]);
+          let lat: number | null = null;
+          let lng: number | null = null;
+          let resolvedAddress = rawAddress;
+
+          // RA provides full addresses — parse lat/lng from geocoder
+          if (venueName && venueName !== 'TBA') {
+            const query = rawAddress
+              ? `${venueName}, ${rawAddress}`
+              : `${venueName}, New York City, NY, USA`;
+            const geocoded = await geocodeWithMapbox(venueName, query);
+            if (geocoded) {
+              lat = geocoded.lat;
+              lng = geocoded.lng;
+              resolvedAddress = geocoded.placeName ?? rawAddress;
+            }
           }
-        }
 
-        // ─── Geocoding (unified geocoder, same bbox as the rest of the pipeline)
-        let lat: number | null = null;
-        let lng: number | null = null;
-        let address: string | null = null;
-
-        if (raw.venueName && raw.venueName !== 'TBA') {
-          const geocoded = await geocodeWithMapbox(
-            raw.venueName,
-            `${raw.venueName}, New York City, NY, USA`
-          );
-          if (geocoded) {
-            lat = geocoded.lat;
-            lng = geocoded.lng;
-            address = geocoded.placeName;
-          }
-        }
-
-        const eventToInsert = {
-          externalId: raw.raEventId,
-          sourceType: 'ra_scrape' as const,
-          title: normalizedTitle,
-          description: null as string | null,
-          category,
-          imageUrl: raw.imageUrl,
-          startAt,
-          endAt: dateValidation.sanitizedEndAt,
-          venueName: raw.venueName,
-          address,
-          lat,
-          lng,
-          isFree,
-          priceMin,
-          priceMax: null as number | null,
-          currency: 'USD',
-          ticketUrl: raw.ticketUrl,
-          platform: 'Resident Advisor',
-          confidenceScore: 0.6,
-          rawSource: raw,
-          status: 'active' as const,
-        };
-
-        const dedupCandidate = {
-          externalId: eventToInsert.externalId,
-          sourceType: eventToInsert.sourceType,
-          title: eventToInsert.title,
-          venueName: eventToInsert.venueName,
-          lat: eventToInsert.lat,
-          lng: eventToInsert.lng,
-          startAt: eventToInsert.startAt,
-          ticketUrl: eventToInsert.ticketUrl,
-          platform: eventToInsert.platform,
-          priceMin: eventToInsert.priceMin,
-          priceMax: null,
-          isFree: eventToInsert.isFree,
-        };
-
-        // ─── Intra-source dedup (same RA event re-scraped) ────────────────────
-        const existing = await db
-          .select({ id: events.id })
-          .from(events)
-          .where(
-            and(
-              eq(events.externalId, raw.raEventId),
-              eq(events.sourceType, 'ra_scrape')
-            )
-          )
-          .limit(1);
-
-        if (existing.length > 0) {
-          await db
-            .update(events)
-            .set({
-              ...eventToInsert,
-              ticketUrls: buildInitialTicketUrls(dedupCandidate),
-            })
-            .where(eq(events.id, existing[0].id));
-          results.updated++;
-        } else {
-          // ─── Cross-platform dedup check ────────────────────────────────────
-          const dedupResult = await findCanonicalMatch(dedupCandidate);
-
-          if (dedupResult.isMatch && dedupResult.canonicalEventId) {
-            const { confidenceScore: _cs, rawSource: _rs, ...coreFields } = eventToInsert;
-            await mergeIntoCanonical(
-              dedupResult.canonicalEventId,
-              dedupCandidate,
-              coreFields,
-              dedupResult.shouldUpdateCanonical
+          // Reject events geocoded outside NYC bounding box
+          if (lat !== null && lng !== null && !isWithinNYC(lat, lng)) {
+            console.warn(
+              `[RA] Skipping "${normalizedTitle}" — venue outside NYC bbox (${lat}, ${lng})`
             );
             results.skipped++;
-          } else {
-            await db.insert(events).values({
-              ...eventToInsert,
-              ticketUrls: buildInitialTicketUrls(dedupCandidate),
-            });
-            results.inserted++;
+            continue;
           }
+
+          // ─── Category ────────────────────────────────────────────────────
+          // RA is nightlife and electronic music — skip LLM fallback
+          const category = await classifyEventCategory({
+            title: normalizedTitle,
+            description: null,
+            skipLlmFallback: true,
+          });
+
+          const ticketUrl = `https://ra.co${event.contentUrl}`;
+
+          const eventToInsert = {
+            externalId: event.id,
+            sourceType: 'ra_scrape' as const,
+            title: normalizedTitle,
+            description: null as string | null,
+            category,
+            imageUrl,
+            startAt,
+            endAt: dateValidation.sanitizedEndAt,
+            venueName,
+            address: resolvedAddress,
+            lat,
+            lng,
+            isFree: false,     // RA events are almost universally ticketed
+            priceMin: null as number | null,
+            priceMax: null as number | null,
+            currency: 'USD',
+            ticketUrl,
+            platform: 'Resident Advisor',
+            confidenceScore: 0.85,  // Higher confidence — structured API data
+            rawSource: { listing, resolvedAddress },
+            status: 'active' as const,
+          };
+
+          const dedupCandidate = {
+            externalId: eventToInsert.externalId,
+            sourceType: eventToInsert.sourceType,
+            title: eventToInsert.title,
+            venueName: eventToInsert.venueName,
+            lat: eventToInsert.lat,
+            lng: eventToInsert.lng,
+            startAt: eventToInsert.startAt,
+            ticketUrl: eventToInsert.ticketUrl,
+            platform: eventToInsert.platform,
+            priceMin: null,
+            priceMax: null,
+            isFree: false,
+          };
+
+          // ─── Intra-source dedup ───────────────────────────────────────────
+          const existing = await db
+            .select({ id: events.id })
+            .from(events)
+            .where(
+              and(
+                eq(events.externalId, event.id),
+                eq(events.sourceType, 'ra_scrape')
+              )
+            )
+            .limit(1);
+
+          if (existing.length > 0) {
+            await db
+              .update(events)
+              .set({
+                ...eventToInsert,
+                ticketUrls: buildInitialTicketUrls(dedupCandidate),
+              })
+              .where(eq(events.id, existing[0].id));
+            results.updated++;
+          } else {
+            // ─── Cross-platform dedup ──────────────────────────────────────
+            const dedupResult = await findCanonicalMatch(dedupCandidate);
+
+            if (dedupResult.isMatch && dedupResult.canonicalEventId) {
+              const { confidenceScore: _cs, rawSource: _rs, ...coreFields } = eventToInsert;
+              await mergeIntoCanonical(
+                dedupResult.canonicalEventId,
+                dedupCandidate,
+                coreFields,
+                dedupResult.shouldUpdateCanonical
+              );
+              results.skipped++;
+            } else {
+              await db.insert(events).values({
+                ...eventToInsert,
+                ticketUrls: buildInitialTicketUrls(dedupCandidate),
+              });
+              results.inserted++;
+            }
+          }
+        } catch (eventError) {
+          console.error(`[RA] Failed to upsert event ${event.id}:`, eventError);
+          results.errors++;
         }
-      } catch (eventError) {
-        console.error(`[RA] Failed to upsert event ${raw.raEventId}:`, eventError);
-        results.errors++;
+      }
+
+      // Polite delay between pages
+      if (pageNum < MAX_PAGES && listings.length === PAGE_SIZE) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } else {
+        break;
       }
     }
 
     await updateIngestionSourceStatus('ra_scrape', 'active');
 
     console.log(
-      `[RA] Scrape complete: inserted=${results.inserted}, updated=${results.updated}, ` +
+      `[RA] Scrape complete: fetched=${totalFetched}, ` +
+        `inserted=${results.inserted}, updated=${results.updated}, ` +
         `skipped=${results.skipped}, errors=${results.errors}`
     );
   } catch (fatalError) {
     console.error('[RA] Fatal error:', fatalError);
-    const { updateIngestionSourceStatus: updateStatus } = await import(
-      '../src/lib/db/ingestionService'
-    );
-    await updateStatus('ra_scrape', 'error', String(fatalError));
+    await updateIngestionSourceStatus('ra_scrape', 'error', String(fatalError));
     process.exit(1);
-  } finally {
-    await browser.close();
   }
 }
 

@@ -82,7 +82,7 @@ export async function geocodeWithMapbox(
 
   // Step 1: Check local DB for known venue override
   if (!skipVenueDbLookup) {
-    const venueOverride = await lookupVenueInDb(venueName);
+    const venueOverride = await lookupVenueInDb(venueName, boundingBox);
     if (venueOverride) {
       return venueOverride;
     }
@@ -161,8 +161,16 @@ export async function geocodeWithMapbox(
 /**
  * Checks the local venues table for a known coordinate override.
  * Uses case-insensitive matching on venue name.
+ *
+ * IMPORTANT: The cached coordinates are validated against the active bounding box
+ * before being returned. This prevents stale or incorrectly-geocoded venue rows
+ * (e.g. a venue name matching a suburb entry) from bypassing all downstream
+ * validation and poisoning newly-ingested events with wrong coordinates.
  */
-async function lookupVenueInDb(venueName: string): Promise<GeocodeResult | null> {
+async function lookupVenueInDb(
+  venueName: string,
+  boundingBox: string = DEFAULT_BOUNDING_BOX
+): Promise<GeocodeResult | null> {
   try {
     const existingVenues = await db
       .select({
@@ -176,9 +184,30 @@ async function lookupVenueInDb(venueName: string): Promise<GeocodeResult | null>
       .limit(1);
 
     if (existingVenues.length > 0 && existingVenues[0].lat && existingVenues[0].lng) {
+      const cachedLat = existingVenues[0].lat;
+      const cachedLng = existingVenues[0].lng;
+
+      // Validate cached coordinates are within the active bounding box.
+      // Without this check, a venue row with wrong/suburban coordinates would be
+      // returned unconditionally, bypassing all Mapbox and isValidLocation guards.
+      const bboxParts = boundingBox.split(',').map(Number);
+      const [bboxMinLng, bboxMinLat, bboxMaxLng, bboxMaxLat] = bboxParts;
+
+      const isCachedWithinBbox =
+        cachedLat >= bboxMinLat && cachedLat <= bboxMaxLat &&
+        cachedLng >= bboxMinLng && cachedLng <= bboxMaxLng;
+
+      if (!isCachedWithinBbox) {
+        console.warn(
+          `[Geocoder] Cached coords for "${venueName}" (${cachedLat}, ${cachedLng}) ` +
+          `are outside the active bounding box — falling through to Mapbox.`
+        );
+        return null;
+      }
+
       return {
-        lat: existingVenues[0].lat,
-        lng: existingVenues[0].lng,
+        lat: cachedLat,
+        lng: cachedLng,
         placeName: existingVenues[0].address ?? `${existingVenues[0].name}, New York, NY`,
       };
     }

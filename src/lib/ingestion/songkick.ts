@@ -21,6 +21,7 @@ export interface RawSongkickEvent {
   venueAddress: string;    // may include city/state
   ticketUrl: string;       // relative or absolute URL
   imageUrl: string | null;
+  description?: string | null;  // extracted from detail page JSON-LD or meta tag
   lat?: number | null;
   lng?: number | null;
 }
@@ -78,9 +79,10 @@ export async function normalizeSongkickEvent(
     externalId: rawEvent.songkickId,
     sourceType: 'songkick_scrape' as const,
     title: normalizedTitle,
-    description: rawEvent.artistNames.length > 1
-      ? `Featuring: ${rawEvent.artistNames.join(', ')}`
-      : null,
+    description: rawEvent.description
+      || (rawEvent.artistNames.length > 1
+        ? `Featuring: ${rawEvent.artistNames.join(', ')}`
+        : null),
     category,
     imageUrl: rawEvent.imageUrl,
     startAt: rawStartAt,

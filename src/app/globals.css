@@ -6,6 +6,8 @@
   --card: rgba(30, 41, 59, 0.7);
   --card-border: rgba(255, 255, 255, 0.1);
   --accent: #3b82f6;
+  --nav-height: 64px;
+  --bottom-nav-height: 60px;
 }
 
 @theme inline {
@@ -31,3 +33,58 @@ body {
   backdrop-filter: blur(12px);
   border: 1px solid var(--card-border);
 }
+
+/* Scrollbar hiding */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Fade edge for horizontal scroll containers */
+.scroll-fade-right {
+  -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+  mask-image: linear-gradient(to right, black 85%, transparent 100%);
+}
+
+/* Card selection highlight ring */
+.card-selected {
+  box-shadow: 0 0 0 2px #3b82f6, 0 0 20px rgba(59, 130, 246, 0.25);
+}
+
+/* Smooth card hover lift */
+.card-hover {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Bottom sheet slide-up animation */
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.animate-slide-up {
+  animation: slide-up 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* Fade in */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 220ms ease forwards;
+}
+
+/* Stagger children fade-in via CSS custom property */
+.stagger-children > * {
+  opacity: 0;
+  animation: fade-in 240ms ease forwards;
+}
+.stagger-children > *:nth-child(1)  { animation-delay: 40ms;  }
+.stagger-children > *:nth-child(2)  { animation-delay: 80ms;  }
+.stagger-children > *:nth-child(3)  { animation-delay: 120ms; }
+.stagger-children > *:nth-child(4)  { animation-delay: 160ms; }
+.stagger-children > *:nth-child(5)  { animation-delay: 200ms; }
+.stagger-children > *:nth-child(6)  { animation-delay: 240ms; }
+.stagger-children > *:nth-child(n+7) { animation-delay: 280ms; }

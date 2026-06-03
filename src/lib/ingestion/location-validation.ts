@@ -114,6 +114,112 @@ export function isGenericAddress(address: string | null | undefined): boolean {
 }
 
 /**
+ * Returns true if the address string explicitly references a municipality
+ * that is outside the NYC 5 boroughs (Long Island suburbs, Westchester,
+ * New Jersey, Connecticut, etc.).
+ *
+ * This catches cases where a scraper provides a fully-qualified address like
+ * "Paramount, Huntington, NY" and we would otherwise force-geocode it within
+ * the NYC bounding box, matching a street named Huntington inside the city.
+ *
+ * Note: This is intentionally conservative — it only flags clearly out-of-area
+ * places, not ambiguous strings. False-negative (missing a suburb) is safer
+ * than false-positive (rejecting a valid NYC address).
+ */
+export function isOutsideNYCMunicipality(address: string | null | undefined): boolean {
+  if (!address) return false;
+  const normalized = address.toLowerCase();
+
+  // Long Island — Nassau County cities/towns
+  const nassauPlaces = [
+    'hempstead', 'garden city', 'mineola', 'great neck', 'long beach',
+    'rockville centre', 'valley stream', 'freeport', 'oceanside',
+    'lynbrook', 'elmont', 'floral park', 'new hyde park', 'manhasset',
+    'port washington', 'glen cove', 'oyster bay', 'hicksville',
+    'levittown', 'wantagh', 'massapequa', 'merrick', 'bellmore',
+    'east meadow', 'uniondale', 'roosevelt', 'inwood', 'woodmere',
+  ];
+
+  // Long Island — Suffolk County cities/towns
+  const suffolkPlaces = [
+    'huntington', 'babylon', 'islip', 'smithtown', 'brookhaven',
+    'riverhead', 'southampton', 'east hampton', 'shelter island',
+    'southold', 'central islip', 'brentwood', 'bay shore', 'amityville',
+    'lindenhurst', 'west babylon', 'copiague', 'deer park', 'north babylon',
+    'commack', 'hauppauge', 'ronkonkoma', 'bohemia', 'holbrook',
+    'patchogue', 'coram', 'medford', 'centereach', 'stony brook',
+    'port jefferson', 'setauket', 'miller place', 'rocky point',
+    'sound beach', 'farmingville', 'selden', 'lake grove', 'lake ronkonkoma',
+    'shirley', 'mastic', 'mastic beach', 'bellport', 'east patchogue',
+    'sayville', 'west sayville', 'oakdale', 'bohemia', 'great river',
+    'bay shore', 'brightwaters', 'west islip', 'east islip', 'islip terrace',
+    'east brentwood', 'north amityville', 'north lindenhurst',
+    'melville', 'south huntington', 'east northport', 'cold spring harbor',
+    'dix hills', 'half hollow hills', 'wheatley heights', 'wyandanch',
+  ];
+
+  // Westchester County
+  const westchesterPlaces = [
+    'yonkers', 'new rochelle', 'mount vernon', 'white plains',
+    'port chester', 'scarsdale', 'harrison', 'rye', 'mamaroneck',
+    'larchmont', 'pelham', 'eastchester', 'tuckahoe', 'bronxville',
+    'dobbs ferry', 'ardsley', 'hastings', 'tarrytown', 'sleepy hollow',
+    'ossining', 'peekskill', 'mount pleasant', 'greenburgh', 'elmsford',
+    'valhalla', 'hawthorne', 'pleasantville', 'briarcliff manor',
+    'yorktown', 'mount kisco', 'bedford', 'north castle', 'harrison',
+  ];
+
+  // New Jersey (close enough to cause confusion)
+  const newJerseyPlaces = [
+    'newark', 'jersey city', 'hoboken', 'secaucus', 'weehawken',
+    'union city', 'bayonne', 'kearny', 'harrison', 'rutherford',
+    'east rutherford', 'meadowlands', 'paramus', 'hackensack',
+    'fort lee', 'edgewater', 'englewood', 'teaneck',
+    ', nj', ', n.j.',
+  ];
+
+  // Connecticut
+  const connecticutPlaces = [
+    ', ct', ', conn', 'greenwich', 'stamford', 'norwalk', 'bridgeport',
+  ];
+
+  const allOutsidePlaces = [
+    ...nassauPlaces,
+    ...suffolkPlaces,
+    ...westchesterPlaces,
+    ...newJerseyPlaces,
+    ...connecticutPlaces,
+  ];
+
+  // Check if the address contains any of the outside-NYC place names.
+  // We require that the place name appears as a word boundary (not as a substring
+  // of a larger word like "Huntington Ave" matching "huntington").
+  // EXCEPTION: street suffixes immediately following the name are fine — we care
+  // about CITY names, not street names. A city name at the end of an address or
+  // following a comma is the key signal.
+  for (const place of allOutsidePlaces) {
+    // For NJ/CT we already anchored with comma prefix — check directly
+    if (place.startsWith(',')) {
+      if (normalized.includes(place)) return true;
+      continue;
+    }
+
+    // Build a pattern: place name preceded by a comma+space ("..., Huntington, NY")
+    // or at start of string, NOT followed by a street suffix token.
+    const escapedPlace = place.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Matches: ", huntington" or ", huntington," or ", huntington ny" etc.
+    // Does NOT match: "huntington ave", "huntington st", "huntington blvd"
+    const cityPattern = new RegExp(
+      `(?:,\\s*)${escapedPlace}(?:\\s*,|\\s+ny\\b|\\s+new york\\b|$)`,
+      'i'
+    );
+    if (cityPattern.test(normalized)) return true;
+  }
+
+  return false;
+}
+
+/**
  * Validates initial coordinates (often from a scraper). If they are invalid (generic centroids),
  * or the address is generic, falls back to Mapbox API to find better coordinates.
  */
@@ -126,6 +232,18 @@ export async function resolveLocationData(
   
   const isInitialValid = isValidLocation(initialLat, initialLng);
   const isGeneric = isGenericAddress(address);
+  
+  // If the address explicitly references a suburb / non-NYC municipality, reject
+  // immediately. We do NOT attempt geocoding because Mapbox (constrained to the
+  // NYC bbox) would return the nearest in-city street with that name instead of
+  // the correct out-of-city location — producing a worse wrong answer.
+  if (isOutsideNYCMunicipality(address)) {
+    console.log(
+      `[LocationValidation] Address "${address}" for "${venueName}" references a ` +
+      `non-NYC municipality — rejecting coordinates and skipping geocode.`
+    );
+    return { lat: null, lng: null, isVerified: false };
+  }
   
   if (isInitialValid && !isGeneric && initialLat != null && initialLng != null) {
     return {

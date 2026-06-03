@@ -233,15 +233,7 @@ Next up: Remaining venue portal features (claim listing, view analytics). Add Me
 Phase 5 — Data Pipeline Improvements & Coverage Expansion (completed 2026-06-01):
 - **Removed SeatGeek mock data fallback**: When `SEATGEEK_CLIENT_ID` is absent, `ingestSeatGeekEvents()` now returns `{ inserted: 0 }` and logs a warning rather than injecting two hardcoded fake events into the database. The dead `ingestMockSeatGeekData()` function was also removed from `src/lib/seatgeek/client.ts`.
 - **Eventbrite city-wide search**: Rewrote `src/lib/eventbrite/client.ts` to use the `/events/search/` endpoint with `location.latitude/longitude` + `location.within=30km` instead of the previous per-organizer/venue config approach. This unlocks all public live events in NYC — community events, art gallery openings, book readings, food/drink events, comedy shows, workshops, fitness classes, and film screenings — without requiring any pre-registration. Paginated up to 5 pages × 50 events. The `src/lib/ingestion/eventbrite.ts` runner was simplified to delegate directly to the new client. Skips `online_event=true` rows (no geocodable venue). Fixed `src/app/api/ingest/eventbrite/route.ts` to match the new single-argument signature.
-- **Resident Advisor scraper rewrite** (`scripts/scrape-ra.ts`): Full rewrite addressing all critical issues from the prior version:
-  - **Date parsing**: Reads actual event dates from RA's `data-pw-date` section headers (with fallback to tonight at 11 PM for nightlife events, which is a better default than `new Date()`).
-  - **Unified geocoding**: Now uses `geocodeWithMapbox()` from `src/lib/utils/geocode.ts` (same NYC bounding box as the rest of the pipeline) instead of a raw Mapbox call with a wider bbox.
-  - **Title normalization**: All titles pass through `normalizeEventTitle()`.
-  - **Category classification**: All events pass through `classifyEventCategory()` with `skipLlmFallback: true` (RA is nightlife/music; keyword scan suffices).
-  - **Cross-platform dedup**: Full `findCanonicalMatch()` + `mergeIntoCanonical()` integration before insert.
-  - **Confidence score**: Set to `0.6` (scraped, no structured API).
-  - **Ingestion tracking**: Updates `ingestion_sources` table via `updateIngestionSourceStatus()`.
-  - **Pipeline integration**: Added `scrape:ra` npm script and added "Resident Advisor Scraper" step to `scripts/sync-all.ts` after Songkick.
+- **Resident Advisor scraper v1** (`scripts/scrape-ra.ts`): Playwright DOM scraper with date parsing from `data-pw-date` headers, unified geocoding, title normalization, category classification, cross-platform dedup, and ingestion tracking. (Superseded in Phase 7 by GraphQL rewrite.)
 
 Phase 6 — iCal Ingestion & Ticket Price Normalization (completed 2026-06-01):
 - **iCal Feed Ingestion Pipeline**:
@@ -258,9 +250,32 @@ Phase 6 — iCal Ingestion & Ticket Price Normalization (completed 2026-06-01):
 - **Development Tooling & Scripts**:
   - Fixed a TypeScript compilation issue in `tsconfig.scripts.json` by adding `"moduleResolution": "node"` to prevent CommonJS import resolution failures for build/seed scripts.
 
+Phase 7 — Scraper Reliability, Description Capture & Data Quality Audit (completed 2026-06-02):
+- **RA GraphQL Rewrite**: Completely rewrote `scripts/scrape-ra.ts` to use RA's undocumented GraphQL API (`https://ra.co/graphql`) instead of Playwright DOM scraping. The previous scraper was blocked by DataDome CAPTCHA (0 events extracted). The GraphQL approach requires no browser, returns structured data (titles, dates, start/end times, venue addresses, images), and ingested **280 new NYC events** on first run. NYC area ID = 8. Paginates up to 6 pages × 50 events = 300 events/sync. Confidence score raised to 0.85 (structured API vs 0.6 for DOM scraping). Cross-platform dedup successfully merged 13 events already in the DB from Dice/Songkick.
+- **Dice & Songkick Description Capture**: Both scrapers already fetched detail pages for JSON-LD coordinate extraction. Extended them to also extract event descriptions from JSON-LD `Event.description`/`MusicEvent.description` fields, with a fallback to `<meta name="description">` tags. Added `description` field to `RawSongkickEvent` interface. `normalizeSongkickEvent` now prefers scraped descriptions over the generic `"Featuring: artist1, artist2"` strings. Dice's `eventToInsert` now includes the extracted `eventDescription`.
+- **Eventbrite API Deprecation Handling**: The Eventbrite `/events/search/` endpoint (deprecated Dec 2019) now returns 404 permanently. Updated `src/lib/eventbrite/client.ts` to detect 404 errors and break gracefully with a clear warning instead of crashing `sync:all`. Existing Eventbrite events remain in the database from prior syncs.
+- **Playwright Browser Install**: Resolved `chromium_headless_shell` missing errors by running `npx playwright install` to download updated browser binaries for Dice, Songkick, and RA scrapers.
+- **Audit Script Fix**: Fixed `scripts/audit-data-quality.ts` — added `dotenv.config()` before DB imports so `DATABASE_URL` is available when the Neon HTTP client initializes. Without this, the script always failed with `fetch failed` / `AggregateError`.
+- **Data Quality Audit Dashboard**: Built 6-tab admin dashboard (`DataQualityDashboard.tsx`) at `/admin/verification` with Overview, Stale Events, Data Completeness, Coordinate Audit, Duplicate Detection, and Verification Logs tabs. Includes batch audit engine (`auditEventQuality.ts`), DB queries (`auditQueries.ts`), and CLI script (`audit-data-quality.ts` with `--limit`, `--fix-stale`, `--dry-run`, `--source` flags).
+- **Backfill Infrastructure**: Created `scripts/backfill-descriptions.ts` with confidence scoring, scraping logic, and dry-run capabilities for post-ingestion description backfilling (limited by source bot-blocking on TM/Songkick).
+- **Source Status**:
+  - ✅ Ticketmaster: 1200 events/sync, paginated up to API limit
+  - ✅ Songkick: 148 events/sync, now with descriptions
+  - ✅ Dice: 30 events/sync, now with descriptions
+  - ✅ RA: 280 events/sync via GraphQL (no CAPTCHA issues)
+  - ✅ iCal/City Parks Foundation: 30 events
+  - ✅ Bandsintown enrichment: backfills missing images
+  - ⚠️ Eventbrite: `/events/search/` permanently deprecated (404). Needs Playwright scraper rewrite.
+  - ⚠️ NYC Parks Socrata: Dataset `fudw-fgrp` stale since 2019. No new data available.
+  - ⚠️ SeatGeek: No `SEATGEEK_CLIENT_ID` configured.
+  - ⚠️ Rough Trade iCal: Dead URL (404). Events covered by Dice scraper.
+
+Next up: Build Eventbrite Playwright scraper to replace dead API. Implement iCal ingestion for Brooklyn Music Kitchen and similar WordPress venues. Add dedup check to direct submission flow to prevent duplicates. Explore RA GraphQL for event descriptions.
+
 ## What is NOT in scope yet
 
-- Venue portal (claim listing, submit events, view analytics) — **next priority**
+- Eventbrite Playwright scraper (to replace deprecated API)
+- Venue portal (claim listing, submit events, view analytics)
 - Email parsing pipeline (LLM-based, for long-tail venues)
 - Meetup.com API integration (community events, run clubs, book clubs, workshops)
 - NYC.gov Events Calendar ingestion
@@ -276,3 +291,4 @@ Phase 6 — iCal Ingestion & Ticket Price Normalization (completed 2026-06-01):
 - For MVP, lat/lng with bounding-box filter is sufficient; PostGIS ST_DWithin can replace later
 - The email parser is proven separately before integrating (10 email types stress test with defined output schema)
 - Demand validation runs in parallel: 3-5 conversations with potential B2B customers about how they currently get event data
+

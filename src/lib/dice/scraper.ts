@@ -152,7 +152,7 @@ export async function scrapeDiceEvents() {
       // Category classification using the shared classifier
       const category = await classifyEventCategory({
         title: normalizedTitle,
-        description: null,
+        description: null, // description not yet available (fetched after this)
         skipLlmFallback: false,
       });
       let priceMin = null;
@@ -173,7 +173,9 @@ export async function scrapeDiceEvents() {
       let address = raw.address;
       let isVerified = false;
 
-      // 1. Attempt to fetch JSON-LD for exact coordinates from detail page
+      // 1. Attempt to fetch JSON-LD for exact coordinates + description from detail page
+      let eventDescription: string | null = null;
+
       if (raw.ticketUrl) {
          try {
             const res = await fetch(raw.ticketUrl, {
@@ -181,6 +183,8 @@ export async function scrapeDiceEvents() {
             });
             if (res.ok) {
                const html = await res.text();
+
+               // Extract JSON-LD structured data
                const matches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
                for (const match of matches) {
                   try {
@@ -191,12 +195,29 @@ export async function scrapeDiceEvents() {
                            lat = Number(item.location.geo.latitude);
                            lng = Number(item.location.geo.longitude);
                         }
+                        // Dice embeds event descriptions in JSON-LD
+                        if ((item['@type'] === 'Event' || item['@type'] === 'MusicEvent') && item.description && typeof item.description === 'string') {
+                           eventDescription = item.description.trim();
+                        }
                      }
                   } catch (e) {}
                }
+
+               // Fallback: extract meta description if JSON-LD had no description
+               if (!eventDescription) {
+                  const metaMatch = html.match(/<meta\s+name="description"\s+content="([^"]+)"/i)
+                     || html.match(/<meta\s+content="([^"]+)"\s+name="description"/i);
+                  if (metaMatch && metaMatch[1] && metaMatch[1].length > 30) {
+                     eventDescription = metaMatch[1]
+                        .replace(/&amp;/g, '&')
+                        .replace(/&quot;/g, '"')
+                        .replace(/&#39;/g, "'")
+                        .trim();
+                  }
+               }
             }
          } catch (e) {
-            console.error(`[Dice] Failed to fetch JSON-LD for ${raw.externalId}`, e);
+            console.error(`[Dice] Failed to fetch detail page for ${raw.externalId}`, e);
          }
       }
 
@@ -213,6 +234,7 @@ export async function scrapeDiceEvents() {
         externalId: raw.externalId,
         sourceType: 'dice_scrape' as const,
         title: normalizedTitle,
+        description: eventDescription,
         category: category as any,
         ticketUrl: raw.ticketUrl,
         imageUrl: raw.imageUrl,

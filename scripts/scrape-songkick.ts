@@ -79,7 +79,7 @@ async function main(): Promise<void> {
 
     for (const rawEvent of uniqueRawEvents) {
       try {
-        // 1. Fetch JSON-LD from detail page to get exact coordinates
+        // 1. Fetch JSON-LD from detail page to get exact coordinates + description
         if (rawEvent.ticketUrl) {
           try {
             const detailUrl = rawEvent.ticketUrl.startsWith('http') ? rawEvent.ticketUrl : `https://www.songkick.com${rawEvent.ticketUrl}`;
@@ -88,22 +88,41 @@ async function main(): Promise<void> {
             });
             if (res.ok) {
               const html = await res.text();
+
+              // Extract JSON-LD structured data
               const matches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
               for (const match of matches) {
                 try {
                   const data = JSON.parse(match[1]);
-                  const events = Array.isArray(data) ? data : [data];
-                  for (const ev of events) {
+                  const jsonLdItems = Array.isArray(data) ? data : [data];
+                  for (const ev of jsonLdItems) {
                     if ((ev['@type'] === 'MusicEvent' || ev['@type'] === 'Event') && ev.location?.geo) {
                       rawEvent.lat = Number(ev.location.geo.latitude);
                       rawEvent.lng = Number(ev.location.geo.longitude);
                     }
+                    // Songkick embeds event descriptions in JSON-LD
+                    if ((ev['@type'] === 'MusicEvent' || ev['@type'] === 'Event') && ev.description && typeof ev.description === 'string') {
+                      rawEvent.description = ev.description.trim();
+                    }
                   }
                 } catch (e) {}
               }
+
+              // Fallback: extract meta description if JSON-LD had no description
+              if (!rawEvent.description) {
+                const metaMatch = html.match(/<meta\s+name="description"\s+content="([^"]+)"/i)
+                  || html.match(/<meta\s+content="([^"]+)"\s+name="description"/i);
+                if (metaMatch && metaMatch[1] && metaMatch[1].length > 30) {
+                  rawEvent.description = metaMatch[1]
+                    .replace(/&amp;/g, '&')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'")
+                    .trim();
+                }
+              }
             }
           } catch (err) {
-            console.error(`[Songkick] Failed to fetch JSON-LD for ${rawEvent.songkickId}`, err);
+            console.error(`[Songkick] Failed to fetch detail page for ${rawEvent.songkickId}`, err);
           }
         }
 

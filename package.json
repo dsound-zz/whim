@@ -30,7 +30,9 @@
     "reset:api-counters": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/reset-api-key-counters.ts",
     "sync:ical": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-ical.ts",
     "seed:ical-sources": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/seed-ical-sources.ts",
-    "backfill:eb-prices": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-eventbrite-prices.ts"
+    "backfill:eb-prices": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-eventbrite-prices.ts",
+    "audit:quality": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/audit-data-quality.ts",
+    "backfill:descriptions": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-descriptions.ts"
   },
   "dependencies": {
     "@emnapi/core": "^1.10.0",

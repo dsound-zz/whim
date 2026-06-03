@@ -1,8 +1,19 @@
+import { Suspense } from "react";
 import FeedMapUI from "./FeedMapUI";
 import { fetchEventsNearLocation } from "@/lib/db/eventService";
 
-export default async function FeedPage() {
-  // Server-side initial fetch (NYC center, Tonight)
+type TimeframeValue = "tonight" | "next_2_days" | "this_week";
+
+export default async function FeedPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ timeframe?: string; category?: string; search?: string }>;
+}) {
+  const resolvedParams = await searchParams;
+  const timeframe = (resolvedParams.timeframe ?? "tonight") as TimeframeValue;
+  const category = resolvedParams.category ?? undefined;
+  const search = resolvedParams.search ?? undefined;
+
   const userLat = 40.7128;
   const userLng = -74.0060;
   
@@ -14,8 +25,10 @@ export default async function FeedPage() {
       maxLat: userLat + 0.2,
       minLng: userLng - 0.2,
       maxLng: userLng + 0.2,
-      timeframe: 'tonight',
-      limit: 100,
+      timeframe,
+      category,
+      search,
+      limit: 150,
       offset: 0,
     });
 
@@ -25,8 +38,11 @@ export default async function FeedPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black">
-      <FeedMapUI initialEvents={initialEvents} />
+    <div className="h-full overflow-hidden">
+      <Suspense fallback={<div className="h-full bg-zinc-950" />}>
+        <FeedMapUI initialEvents={initialEvents} />
+      </Suspense>
     </div>
   );
 }
+

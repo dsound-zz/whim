@@ -1,9 +1,15 @@
 import { db } from '@/db';
 import { events } from '@/db/schema';
-import { and, eq, gte, lte, count, sql } from 'drizzle-orm';
+import { and, eq, gte, lte, count, sql, ilike, or, desc } from 'drizzle-orm';
 import type { FetchEventsParams } from '@/types';
 import crypto from 'crypto';
 import { getTimeframeRange } from '@/lib/utils/date';
+
+// Minimum trigram similarity threshold.
+// 0.1 is intentionally low — we layer in ILIKE as a tie-breaker and rely on
+// ORDER BY similarity DESC to surface the best matches at the top.
+const TRGM_THRESHOLD = 0.1;
+
 
 export async function fetchEventsNearLocation(params: FetchEventsParams) {
   const conditions = [
@@ -12,7 +18,7 @@ export async function fetchEventsNearLocation(params: FetchEventsParams) {
     gte(events.lng, params.minLng),
     lte(events.lng, params.maxLng),
     eq(events.status, 'active'),
-    sql`"end_at" > now() OR ("end_at" IS NULL AND "start_at" > now() - INTERVAL '4 hours')`
+    sql`("end_at" > now() OR ("end_at" IS NULL AND "start_at" > now() - INTERVAL '4 hours'))`
   ];
 
   if (params.timeframe) {
@@ -32,7 +38,45 @@ export async function fetchEventsNearLocation(params: FetchEventsParams) {
     conditions.push(eq(events.category, params.category as any));
   }
 
+
+  if (params.search && params.search.trim().length > 0) {
+    const queryText = params.search.trim();
+
+    if (queryText.length >= 3) {
+      // Fuzzy trigram search: matches regardless of word order, handles partial
+      // words and light typos. The `%` operator uses pg_trgm's similarity().
+      // We set a low threshold and rely on ORDER BY to rank results.
+      conditions.push(
+        sql`(
+          similarity(${events.title}, ${queryText}) > ${TRGM_THRESHOLD}
+          OR similarity(${events.venueName}, ${queryText}) > ${TRGM_THRESHOLD}
+          OR ${events.title} ILIKE ${'%' + queryText + '%'}
+          OR ${events.venueName} ILIKE ${'%' + queryText + '%'}
+        )`
+      );
+    } else {
+      // Short query: trigram needs ≥3 chars to be useful; use plain substring match
+      const likePattern = `%${queryText}%`;
+      conditions.push(
+        or(
+          ilike(events.title, likePattern),
+          ilike(events.venueName, likePattern)
+        )!
+      );
+    }
+  }
+
   const whereClause = and(...conditions);
+
+  // Relevance expression: highest of title/venue similarity scores.
+  // Falls back to 0 when no search query so ordering is stable.
+  const hasSearch = (params.search?.trim().length ?? 0) >= 3;
+  const relevanceScore = hasSearch
+    ? sql<number>`GREATEST(
+        similarity(${events.title}, ${params.search!.trim()}),
+        similarity(${events.venueName}, ${params.search!.trim()})
+      )`
+    : sql<number>`0`;
 
   // Get total count for pagination metadata
   const countResult = await db
@@ -41,12 +85,12 @@ export async function fetchEventsNearLocation(params: FetchEventsParams) {
     .where(whereClause);
   const total = countResult[0]?.total || 0;
 
-  // Get paginated events list ordered by date
+  // Get paginated events — order by relevance desc, then by date
   const data = await db
     .select()
     .from(events)
     .where(whereClause)
-    .orderBy(events.startAt)
+    .orderBy(hasSearch ? desc(relevanceScore) : events.startAt, events.startAt)
     .limit(params.limit)
     .offset(params.offset);
 
