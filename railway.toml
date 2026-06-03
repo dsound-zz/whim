@@ -7,15 +7,3 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-
-[cron.scrape-dice]
-schedule = "0 6 * * *"
-command = "npm run scrape:dice"
-
-[cron.scrape-songkick]
-schedule = "0 8 * * *"
-command = "npm run scrape:songkick"
-
-[cron.expire-events]
-schedule = "0 0 * * *"
-command = "npm run expire:events"

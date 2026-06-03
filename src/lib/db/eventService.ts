@@ -4,6 +4,7 @@ import { and, eq, gte, lte, count, sql, ilike, or, desc } from 'drizzle-orm';
 import type { FetchEventsParams } from '@/types';
 import crypto from 'crypto';
 import { getTimeframeRange } from '@/lib/utils/date';
+import { deduplicateEvents } from '@/lib/utils/deduplicateEvents';
 
 // Minimum trigram similarity threshold.
 // 0.1 is intentionally low — we layer in ILIKE as a tie-breaker and rely on
@@ -85,17 +86,24 @@ export async function fetchEventsNearLocation(params: FetchEventsParams) {
     .where(whereClause);
   const total = countResult[0]?.total || 0;
 
+  // Fetch extra rows to compensate for records that get collapsed by dedup
+  const fetchLimit = params.limit * 2;
+
   // Get paginated events — order by relevance desc, then by date
   const data = await db
     .select()
     .from(events)
     .where(whereClause)
     .orderBy(hasSearch ? desc(relevanceScore) : events.startAt, events.startAt)
-    .limit(params.limit)
+    .limit(fetchLimit)
     .offset(params.offset);
 
+  // Collapse same-show duplicates (e.g. TM box-office vs. resale IDs for the
+  // same event) before returning. Slice back to the requested limit afterwards.
+  const deduplicated = deduplicateEvents(data).slice(0, params.limit);
+
   return {
-    events: data,
+    events: deduplicated,
     total,
   };
 }

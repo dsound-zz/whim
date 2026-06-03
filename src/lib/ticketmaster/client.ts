@@ -13,6 +13,28 @@ import {
 
 const TICKETMASTER_API_URL = 'https://app.ticketmaster.com/discovery/v2';
 
+// Prefer large 16:9 images for cards. TM always includes multiple sizes —
+// pick the biggest available rather than defaulting to the first in the array
+// (which is typically a small 305px ARTIST_PAGE thumbnail).
+const TM_IMAGE_PRIORITY = [
+  'TABLET_LANDSCAPE_LARGE_16_9', // 2048 × 1152 — best quality
+  'RETINA_LANDSCAPE_16_9',       // 1136 × 639
+  'TABLET_LANDSCAPE_16_9',       // 1024 × 576
+  'RETINA_PORTRAIT_16_9',        // 640 × 360
+  'EVENT_DETAIL_PAGE_16_9',      // 205 × 115
+  'RECOMENDATION_16_9',          // 100 × 56
+];
+
+function selectBestTicketmasterImage(images: { url: string; ratio?: string }[] | undefined): string | null {
+  if (!images?.length) return null;
+  for (const suffix of TM_IMAGE_PRIORITY) {
+    const match = images.find((img) => img.url.includes(suffix));
+    if (match) return match.url;
+  }
+  // Fallback: any 16:9 image, then any image
+  return images.find((img) => img.ratio === '16_9')?.url ?? images[0]?.url ?? null;
+}
+
 async function fetchTicketmaster(endpoint: string, apiKey: string) {
   const url = new URL(`${TICKETMASTER_API_URL}${endpoint}`);
   url.searchParams.append('apikey', apiKey);
@@ -112,7 +134,7 @@ async function processTicketmasterPayload(tmEvents: any[]) {
         title: normalizedTitle,
         description: tmEvent.description || tmEvent.info || null,
         category,
-        imageUrl: tmEvent.images?.[0]?.url || null,
+        imageUrl: selectBestTicketmasterImage(tmEvent.images),
         startAt: rawStartAt,
         endAt: dateValidation.sanitizedEndAt,
         venueName: venueData?.name || 'Unknown Venue',
