@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { formatPrice } from "@/lib/utils/formatPrice";
 import { getCategoryConfig, getCategoryGradient, getCategoryBadgeClasses } from "@/lib/utils/categoryConfig";
 
@@ -34,22 +34,44 @@ export function EventCard({
   onHover,
 }: EventCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
+  // Locale-sensitive formatting (toLocaleDateString etc.) produces different
+  // output on the server (UTC) vs. the client (user timezone), which triggers
+  // React hydration error #418. We defer it to after mount so the first render
+  // is identical on both sides.
+  const [isClientMounted, setIsClientMounted] = useState(false);
+  useEffect(() => { setIsClientMounted(true); }, []);
 
   const dateObj = typeof startAt === "string" ? new Date(startAt) : startAt;
 
-  // Relative day label
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const eventDay = new Date(dateObj);
-  eventDay.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((eventDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  let dayStr: string;
+  let timeStr: string;
 
-  const dayStr =
-    diffDays === 0 ? "Tonight" :
-    diffDays === 1 ? "Tomorrow" :
-    dateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  if (isClientMounted) {
+    // Relative day label — safe to use locale APIs after hydration
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const eventDay = new Date(dateObj);
+    eventDay.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((eventDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-  const timeStr = dateObj.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    dayStr =
+      diffDays === 0 ? "Tonight" :
+      diffDays === 1 ? "Tomorrow" :
+      dateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+    timeStr = dateObj.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  } else {
+    // Stable UTC-based placeholder rendered on both server and client first pass
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const month = dateObj.getUTCMonth() + 1;
+    const day = dateObj.getUTCDate();
+    const hours = dateObj.getUTCHours();
+    const minutes = pad(dateObj.getUTCMinutes());
+    const period = hours >= 12 ? "PM" : "AM";
+    const displayHour = hours % 12 || 12;
+    dayStr = `${month}/${day}`;
+    timeStr = `${displayHour}:${minutes} ${period}`;
+  }
   const priceTag = formatPrice(isFree ?? false, priceMin, priceMax, ticketUrl);
   const catConfig = getCategoryConfig(category);
   const gradient = getCategoryGradient(category);
