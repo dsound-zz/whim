@@ -74,13 +74,8 @@ export default async function HomePage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
           </Link>
-          <Link
-            href="/submit"
-            className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white font-semibold px-6 py-3.5 rounded-full text-base transition-all"
-          >
-            Submit an Event
-          </Link>
         </div>
+
 
         {/* Source chips */}
         <div className="flex flex-wrap items-center justify-center gap-2 mt-10">

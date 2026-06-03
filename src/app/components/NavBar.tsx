@@ -14,16 +14,8 @@ const NAV_LINKS = [
       </svg>
     ),
   },
-  {
-    href: "/submit",
-    label: "Submit",
-    icon: (active: boolean) => (
-      <svg className={`w-5 h-5 ${active ? "text-white" : "text-zinc-500"}`} fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? 0 : 1.75} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
 ];
+
 
 export function NavBar() {
   const pathname = usePathname();

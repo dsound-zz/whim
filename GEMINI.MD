@@ -270,6 +270,23 @@ Phase 7 — Scraper Reliability, Description Capture & Data Quality Audit (compl
   - ⚠️ SeatGeek: No `SEATGEEK_CLIENT_ID` configured.
   - ⚠️ Rough Trade iCal: Dead URL (404). Events covered by Dice scraper.
 
+Phase 8 — Bug Fixes, Feed Quality & iCal Audit (completed 2026-06-03):
+- **Middleware Conflict Fix**: Deleted `src/middleware.ts` which conflicted with `src/proxy.ts` (this version of Next.js uses `proxy.ts` as the sole middleware entry point — having both caused a Turbopack panic: "Both middleware file and proxy file are detected"). Merged admin HTTP Basic Auth into `proxy.ts` and updated the `matcher` export to cover both `/admin/:path*` and `/api/v1/:path*`. Admin credentials: `username=demiansims`, `password=BaFlw8083!`.
+- **Feed Deduplication Fix**: Ticketmaster issues separate event IDs for the same physical show under two parallel systems — `tmc` (box office/primary) and `tmr` (resale/marketplace). Because dedup keys on `(externalId, sourceType)`, both rows were valid inserts, producing visible duplicates in the consumer feed (e.g. Hamilton appearing twice). Fixed by wiring `deduplicateEvents()` directly into `fetchEventsNearLocation()` in `src/lib/db/eventService.ts`. The function fetches `limit × 2` rows from DB, collapses duplicates by (title + venue + ±2hr time window), then slices back to the requested limit. The utility already existed and handled cross-platform dedup on the detail page — it just wasn't applied to the main feed query.
+- **Ticketmaster Image Quality Fix**: The TM ingestion was using `tmEvent.images?.[0]?.url` which always picked the first image in TM's array — invariably the 305×203px `ARTIST_PAGE_3_2` thumbnail. Added `selectBestTicketmasterImage()` in `src/lib/ticketmaster/client.ts` that walks a priority list and selects the largest available 16:9 image: `TABLET_LANDSCAPE_LARGE_16_9` (2048×1152), then `RETINA_LANDSCAPE_16_9` (1136×639), `TABLET_LANDSCAPE_16_9` (1024×576), etc. The next TM sync will backfill all existing events with the high-res URLs.
+- **iCal Feed Audit & Dead Feed Cleanup**: Audited all 10 iCal ingestion sources and paused 9 dead ones in the DB. Only City Parks Foundation remains active.
+  - `roughtrade.com` — Cloudflare 403 on all URL variants. Events covered by Songkick/TM.
+  - `thebellhouseny.com` — No iCal feed. Site is Ticketmaster-powered (tm_id=393383). Already covered by TM sync.
+  - `elsewherebrooklyn.com` — Domain moved to `elsewhere.club`, no iCal on new stack. Covered by Dice scraper.
+  - `babysallright.com` — Custom CMS, no `.ics` export at any path.
+  - `roulette.org` — WordPress site with no iCal endpoint exposed.
+  - `boweryelectric.com` — Custom CMS, 404 on all paths.
+  - `purgatoryny.com` — Dead domain, DNS does not resolve.
+  - `pioneerworks.org` — Returns HTML at all `.ics`/`?ical` paths.
+  - `bricartsmedia.org` — 404 after www redirect.
+  - ✅ `cityparksfoundation.org` — Working, 30 events/sync.
+  - Added `scripts/pause-dead-ical-feeds.ts` utility. NOTE: Drizzle's `sql` template tag with JSONB `->>'key' LIKE $param` matched 0 rows (likely a driver parameterization edge case with Neon HTTP). Use `inArray(ingestionSources.id, [...])` by primary key for reliable targeted updates.
+
 Next up: Build Eventbrite Playwright scraper to replace dead API. Implement iCal ingestion for Brooklyn Music Kitchen and similar WordPress venues. Add dedup check to direct submission flow to prevent duplicates. Explore RA GraphQL for event descriptions.
 
 ## What is NOT in scope yet
