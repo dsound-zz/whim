@@ -108,14 +108,27 @@ export default async function EventDetailPage({
           </Link>
         </div>
 
-        {/* Hero Image — negative margin to go under the sticky back button */}
-        <div className="w-full aspect-video relative bg-zinc-900 border-b border-zinc-800 -mt-12">
+        {/* Hero Image — blurred backdrop + sharp contained image (Spotify pattern).
+            Works at any source resolution — small avatars look intentional, not pixelated. */}
+        <div className="w-full aspect-video relative bg-zinc-900 border-b border-zinc-800 -mt-12 overflow-hidden">
           {event.imageUrl ? (
-            <img
-              src={event.imageUrl}
-              alt={event.title}
-              className="w-full h-full object-cover object-top"
-            />
+            <>
+              {/* Blurred backdrop fill */}
+              <img
+                src={event.imageUrl}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-60 saturate-150"
+              />
+              {/* Dark scrim so text stays readable */}
+              <div className="absolute inset-0 bg-black/30" />
+              {/* Sharp foreground image — contained at natural aspect ratio */}
+              <img
+                src={event.imageUrl}
+                alt={event.title}
+                className="relative z-10 w-full h-full object-contain drop-shadow-2xl"
+              />
+            </>
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-indigo-900 to-indigo-600 flex items-center justify-center">
               <span className="text-4xl">🎟️</span>
