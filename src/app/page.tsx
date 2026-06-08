@@ -52,7 +52,7 @@ export default async function HomePage() {
         <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-none mb-5 max-w-3xl">
           <span className="text-white">What&rsquo;s happening</span>
           <br />
-          <span className="bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-blue-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent">
             near me tonight?
           </span>
         </h1>

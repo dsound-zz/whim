@@ -211,7 +211,7 @@ export default function FeedMapUI({ initialEvents }: { initialEvents: any[] }) {
             "music",      "#6366f1",
             "comedy",     "#f59e0b",
             "art",        "#f43f5e",
-            "theater",    "#a855f7",
+            "theater",    "#ef4444",
             "food_drink", "#10b981",
             "nightlife",  "#d946ef",
             "sports",     "#0ea5e9",

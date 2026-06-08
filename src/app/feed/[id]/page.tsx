@@ -219,20 +219,22 @@ export default async function EventDetailPage({
       </div>
 
       {/* Fixed Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-black via-black/95 to-transparent">
-        <div className="flex items-center gap-4">
-          <div className="flex flex-col">
-            <span className="text-xs text-zinc-400 font-medium uppercase tracking-wider">Price</span>
-            <span className="text-xl font-bold">{priceTag}</span>
+      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/95 to-transparent">
+        <div className="max-w-md mx-auto px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col">
+              <span className="text-xs text-zinc-400 font-medium uppercase tracking-wider">Price</span>
+              <span className="text-xl font-bold">{priceTag}</span>
+            </div>
+            <a
+              href={primaryTicketUrl}
+              target={primaryTicketUrl !== "#" ? "_blank" : "_self"}
+              rel="noopener noreferrer"
+              className="flex-1 bg-white hover:bg-zinc-200 text-black font-bold py-4 rounded-xl text-center text-lg transition-colors"
+            >
+              {primaryTicketUrl !== "#" ? "Get Tickets" : "More Info"}
+            </a>
           </div>
-          <a
-            href={primaryTicketUrl}
-            target={primaryTicketUrl !== "#" ? "_blank" : "_self"}
-            rel="noopener noreferrer"
-            className="flex-1 bg-white hover:bg-zinc-200 text-black font-bold py-4 rounded-xl text-center text-lg transition-colors"
-          >
-            {primaryTicketUrl !== "#" ? "Get Tickets" : "More Info"}
-          </a>
         </div>
       </div>
     </div>

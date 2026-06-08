@@ -78,9 +78,11 @@ export function getThisWeekRange() {
   const naiveNow = getNaiveNYCDate(now);
   
   const naiveEnd = new Date(naiveNow.getTime());
-  // 11:59:59 PM on the upcoming Sunday
+  // 11:59:59 PM on the upcoming Sunday.
+  // If today IS Sunday, roll to next Sunday (7 days ahead) so the filter
+  // covers the full coming week rather than ending in a few hours.
   const currentDayOfWeek = naiveEnd.getUTCDay(); // 0 = Sunday, 1 = Monday
-  const daysUntilSunday = currentDayOfWeek === 0 ? 0 : 7 - currentDayOfWeek;
+  const daysUntilSunday = currentDayOfWeek === 0 ? 7 : 7 - currentDayOfWeek;
   
   naiveEnd.setUTCDate(naiveEnd.getUTCDate() + daysUntilSunday);
   naiveEnd.setUTCHours(23, 59, 59, 999);
