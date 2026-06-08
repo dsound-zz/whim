@@ -231,9 +231,10 @@ async function processEventbritePayload(
         // thumbnail size parameters from logo.url to get the base image CDN URL
         // (e.g. remove ?crop=...&h=200&w=450&... which forces a tiny thumbnail).
         imageUrl: (() => {
-          const originalUrl = (ebEvent.logo as Record<string, unknown> | undefined)?.original?.url;
+          const logo = ebEvent.logo as Record<string, unknown> | undefined;
+          const originalUrl = (logo?.original as Record<string, unknown> | undefined)?.url;
           if (typeof originalUrl === 'string' && originalUrl.startsWith('http')) return originalUrl;
-          const logoUrl = ebEvent.logo?.url;
+          const logoUrl = logo?.url;
           if (typeof logoUrl !== 'string') return null;
           // Strip Eventbrite CDN thumbnail params — the base URL serves the full image
           return logoUrl.split('?')[0] ?? null;
