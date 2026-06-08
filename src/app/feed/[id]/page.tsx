@@ -109,9 +109,13 @@ export default async function EventDetailPage({
         </div>
 
         {/* Hero Image — negative margin to go under the sticky back button */}
-        <div className="w-full aspect-square relative bg-zinc-900 border-b border-zinc-800 -mt-12">
+        <div className="w-full aspect-video relative bg-zinc-900 border-b border-zinc-800 -mt-12">
           {event.imageUrl ? (
-            <img src={event.imageUrl} alt={event.title} className="w-full h-full object-cover" />
+            <img
+              src={event.imageUrl}
+              alt={event.title}
+              className="w-full h-full object-cover object-top"
+            />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-indigo-900 to-indigo-600 flex items-center justify-center">
               <span className="text-4xl">🎟️</span>
