@@ -5,6 +5,7 @@ import { resolveLocationData } from './location-validation';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle, isTitleJustVenueName } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import { estimateEndTime } from '@/lib/utils/estimateEndTime';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -64,6 +65,7 @@ export async function normalizeSongkickEvent(
       : null,
     // Songkick is music-only; skip LLM — keyword scan will catch edge cases
     skipLlmFallback: true,
+    defaultCategory: 'music',
   });
 
   // Geocode venue with fallback
@@ -86,7 +88,7 @@ export async function normalizeSongkickEvent(
     category,
     imageUrl: rawEvent.imageUrl,
     startAt: rawStartAt,
-    endAt: dateValidation.sanitizedEndAt,
+    endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(rawStartAt, category),
     venueName: rawEvent.venueName,
     address: addressString,
     lat: locationData.lat,

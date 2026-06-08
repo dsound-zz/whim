@@ -93,7 +93,6 @@ async function main(): Promise<void> {
     durationMs: number;
   }> = [];
 
-  let hasAnyFailure = false;
 
   for (const sourceRow of sourcesToProcess) {
     const config = sourceRow.config as Record<string, unknown> | null;
@@ -116,7 +115,6 @@ async function main(): Promise<void> {
         errors: 1,
         durationMs: 0,
       });
-      hasAnyFailure = true;
       continue;
     }
 
@@ -138,7 +136,6 @@ async function main(): Promise<void> {
         durationMs: result.durationMs,
       });
 
-      if (result.errors > 0) hasAnyFailure = true;
     } catch (fatalError) {
       console.error(`[sync-ical] Fatal error for ${feedUrl}:`, fatalError);
       summary.push({
@@ -150,7 +147,6 @@ async function main(): Promise<void> {
         errors: 1,
         durationMs: 0,
       });
-      hasAnyFailure = true;
     }
   }
 
@@ -174,12 +170,26 @@ async function main(): Promise<void> {
   const totalInserted = summary.reduce((acc, row) => acc + row.inserted, 0);
   const totalUpdated = summary.reduce((acc, row) => acc + row.updated, 0);
   const totalMerged = summary.reduce((acc, row) => acc + row.merged, 0);
+  const totalSucceeded = summary.filter((row) => row.status === 'SUCCESS').length;
+  const totalFailed = summary.filter((row) => row.status === 'FAILED').length;
 
   console.log(
     `\nTotal: inserted=${totalInserted}, updated=${totalUpdated}, merged=${totalMerged}`
   );
 
-  process.exit(hasAnyFailure ? 1 : 0);
+  if (totalFailed > 0) {
+    console.warn(
+      `\n⚠ ${totalFailed}/${summary.length} feed(s) failed.` +
+        (totalSucceeded > 0
+          ? ` ${totalSucceeded} succeeded — exiting with code 0.`
+          : ' All feeds failed — exiting with code 1.')
+    );
+  }
+
+  // Only exit non-zero when every feed failed — individual failures are
+  // expected (venues drop iCal support, URLs go stale, etc.) and should
+  // not block the rest of the pipeline.
+  process.exit(totalSucceeded === 0 && summary.length > 0 ? 1 : 0);
 }
 
 main().catch((error: unknown) => {

@@ -383,6 +383,13 @@ export interface ClassifyEventParams {
   platformTaxonomy?: PlatformTaxonomy;
   /** If true, skips the Gemini fallback even if the first two stages fail. Default false. */
   skipLlmFallback?: boolean;
+  /**
+   * Category to use when all classification stages fail. Useful for
+   * source-aware defaults — e.g. RA and Songkick are music-first platforms,
+   * so their callers pass `defaultCategory: 'music'` instead of falling
+   * through to 'other' when the title is just an artist name.
+   */
+  defaultCategory?: WhimCategory;
 }
 
 /**
@@ -391,12 +398,12 @@ export interface ClassifyEventParams {
  * 2. Keyword scan (deterministic)
  * 3. Gemini Flash fallback (async, optional)
  *
- * Falls back to 'other' if all three stages fail.
+ * Falls back to `defaultCategory` (or 'other') if all three stages fail.
  */
 export async function classifyEventCategory(
   params: ClassifyEventParams
 ): Promise<WhimCategory> {
-  const { title, description, platformTaxonomy, skipLlmFallback = false } = params;
+  const { title, description, platformTaxonomy, skipLlmFallback = false, defaultCategory = 'other' } = params;
 
   // Stage 1: Platform taxonomy
   if (platformTaxonomy) {
@@ -414,5 +421,5 @@ export async function classifyEventCategory(
     if (llmResult) return llmResult;
   }
 
-  return 'other';
+  return defaultCategory;
 }

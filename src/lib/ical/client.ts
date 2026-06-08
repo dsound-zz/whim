@@ -95,14 +95,60 @@ function extractParamValue(value: ParameterValue | undefined): string | null {
 
 /**
  * Attempts to extract an image URL from an iCal VEVENT.
- * Some calendars include IMAGE (RFC 7986) or ATTACH properties.
+ *
+ * Checks (in priority order):
+ * 1. RFC 7986 IMAGE property
+ * 2. ATTACH properties with image FMTTYPE or image file extensions
+ * 3. X-WR-IMAGE / X-IMAGE custom properties (used by some calendar services)
+ * 4. <img> tags embedded in HTML descriptions (last resort)
  */
 function extractImageUrl(event: VEvent): string | null {
-  // RFC 7986 IMAGE property (passed through as-is by node-ical as unknown)
-  const imageProperty = (event as Record<string, unknown>)['image'];
-  if (typeof imageProperty === 'string' && imageProperty.startsWith('http')) {
-    return imageProperty;
+  const rawEvent = event as Record<string, unknown>;
+
+  // 1. RFC 7986 IMAGE property
+  if (typeof rawEvent['image'] === 'string' && rawEvent['image'].startsWith('http')) {
+    return rawEvent['image'];
   }
+
+  // 2. ATTACH properties — the standard way calendars embed images
+  const attach = rawEvent['attach'];
+  if (attach) {
+    const attachments = Array.isArray(attach) ? attach : [attach];
+    for (const attachment of attachments) {
+      const attachUrl = typeof attachment === 'string'
+        ? attachment
+        : (attachment as Record<string, unknown>)?.val as string | undefined;
+
+      if (typeof attachUrl === 'string' && attachUrl.startsWith('http')) {
+        // Check FMTTYPE parameter or file extension
+        const fmtType = ((attachment as Record<string, unknown>)?.params as Record<string, unknown> | undefined)?.FMTTYPE as string | undefined;
+        const isImageFmt = fmtType?.startsWith('image/');
+        const isImageExt = /\.(jpe?g|png|gif|webp|svg|avif)(\?|$)/i.test(attachUrl);
+
+        if (isImageFmt || isImageExt) {
+          return attachUrl;
+        }
+      }
+    }
+  }
+
+  // 3. X-* custom image properties
+  for (const customKey of ['X-WR-IMAGE', 'X-IMAGE', 'x-wr-image', 'x-image']) {
+    const customValue = rawEvent[customKey];
+    if (typeof customValue === 'string' && customValue.startsWith('http')) {
+      return customValue;
+    }
+  }
+
+  // 4. <img> tags in HTML description (last resort)
+  const description = typeof rawEvent['description'] === 'string' ? rawEvent['description'] : null;
+  if (description) {
+    const imgMatch = description.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (imgMatch?.[1]?.startsWith('http')) {
+      return imgMatch[1];
+    }
+  }
+
   return null;
 }
 

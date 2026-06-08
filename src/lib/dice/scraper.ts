@@ -5,6 +5,7 @@ import { resolveLocationData } from '@/lib/ingestion/location-validation';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import { estimateEndTime } from '@/lib/utils/estimateEndTime';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -239,7 +240,7 @@ export async function scrapeDiceEvents() {
         ticketUrl: raw.ticketUrl,
         imageUrl: raw.imageUrl,
         startAt,
-        endAt: dateValidation.sanitizedEndAt,
+        endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(startAt, category),
         venueName: raw.venueName,
         address,
         lat,

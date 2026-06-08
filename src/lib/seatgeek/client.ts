@@ -16,6 +16,7 @@ import { eq, and } from 'drizzle-orm';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import { estimateEndTime } from '@/lib/utils/estimateEndTime';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -194,7 +195,7 @@ async function processSeatGeekPayload(
         category,
         imageUrl,
         startAt: rawStartAt,
-        endAt: dateValidation.sanitizedEndAt,
+        endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(rawStartAt, category),
         venueName: venue.name,
         address: venue.address
           ? `${venue.address}, ${venue.city}, ${venue.state} ${venue.postal_code}`

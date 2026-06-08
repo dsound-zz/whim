@@ -10,7 +10,7 @@ const SCRIPTS = [
   { name: 'Resident Advisor Scraper', command: 'scrape:ra' },
   { name: 'iCal Feeds', command: 'sync:ical' },
   { name: 'Bandsintown Enrichment', command: 'enrich:bandsintown' },
-  { name: 'Event Cleanup', command: 'cleanup:events' },
+  { name: 'Event Expiration', command: 'expire:events' },
 ];
 
 async function runCommand(cmd: string, args: string[]): Promise<number> {

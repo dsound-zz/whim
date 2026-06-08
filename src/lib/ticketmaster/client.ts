@@ -4,6 +4,7 @@ import { eq, and } from 'drizzle-orm';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
+import { estimateEndTime } from '@/lib/utils/estimateEndTime';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -122,7 +123,7 @@ async function processTicketmasterPayload(tmEvents: any[]) {
       const tmGenre = tmEvent.classifications?.[0]?.genre?.name;
       const category = await classifyEventCategory({
         title: normalizedTitle,
-        description: tmEvent.description || tmEvent.info,
+        description: tmEvent.description || tmEvent.info || tmEvent.pleaseNote || tmEvent.additionalInfo,
         platformTaxonomy: { tmSegment, tmGenre },
       });
 
@@ -132,11 +133,11 @@ async function processTicketmasterPayload(tmEvents: any[]) {
         externalId: tmEvent.id,
         sourceType: 'ticketmaster_api' as const,
         title: normalizedTitle,
-        description: tmEvent.description || tmEvent.info || null,
+        description: tmEvent.description || tmEvent.info || tmEvent.pleaseNote || tmEvent.additionalInfo || null,
         category,
         imageUrl: selectBestTicketmasterImage(tmEvent.images),
         startAt: rawStartAt,
-        endAt: dateValidation.sanitizedEndAt,
+        endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(rawStartAt, category),
         venueName: venueData?.name || 'Unknown Venue',
         address: venueData ? `${venueData.address?.line1 || ''}, ${venueData.city?.name || ''}`.trim() : null,
         lat: venueData?.location?.latitude ? parseFloat(venueData.location.latitude) : null,

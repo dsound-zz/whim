@@ -240,6 +240,7 @@ async function main(): Promise<void> {
             title: normalizedTitle,
             description: null,
             skipLlmFallback: true,
+            defaultCategory: 'music',
           });
 
           const ticketUrl = `https://ra.co${event.contentUrl}`;
