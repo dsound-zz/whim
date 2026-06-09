@@ -106,7 +106,7 @@ interface ParsedServerData {
 }
 
 function extractServerData(html: string): ParsedServerData {
-  const match = html.match(/window\.__SERVER_DATA__\s*=\s*(\{.*?\});\s*\n/s);
+  const match = html.match(/window\.__SERVER_DATA__\s*=\s*(\{[\s\S]*?\});\s*\n/);
   if (!match) return { events: [], pageCount: 1 };
 
   let parsed: unknown;

@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // node-ical uses BigInt which Turbopack can't bundle — keep it as a native require
+  serverExternalPackages: ["node-ical"],
 };
 
 export default nextConfig;
