@@ -287,15 +287,70 @@ Phase 8 — Bug Fixes, Feed Quality & iCal Audit (completed 2026-06-03):
   - ✅ `cityparksfoundation.org` — Working, 30 events/sync.
   - Added `scripts/pause-dead-ical-feeds.ts` utility. NOTE: Drizzle's `sql` template tag with JSONB `->>'key' LIKE $param` matched 0 rows (likely a driver parameterization edge case with Neon HTTP). Use `inArray(ingestionSources.id, [...])` by primary key for reliable targeted updates.
 
-Next up: Build Eventbrite Playwright scraper to replace dead API. Implement iCal ingestion for Brooklyn Music Kitchen and similar WordPress venues. Add dedup check to direct submission flow to prevent duplicates. Explore RA GraphQL for event descriptions.
+Phase 9 — Coverage Audit & Meetup Scraper (completed 2026-06-09):
+- **Coverage Audit**: Conducted a full audit of the data pipeline. Key finding: the pipeline was music-heavy (~1,700 events/sync but overwhelmingly concerts). Eventbrite was the diversity engine (community, food, art, workshops) and is permanently dead. NYC Parks Socrata dataset is stale since 2019. SeatGeek has no configured API key. 9/10 seeded iCal feeds are dead. The "big ticket to community garden" coverage goal was not being met — community events were essentially zero.
+- **Monetization Decision**: Confirmed B2B API → venue premium listings → affiliate ticketing as the revenue model. Ads ruled out — they undermine the frictionless browsing UX that differentiates Whim from TimeOut.
+- **Meetup Scraper** (`scripts/scrape-meetup.ts`): Playwright + stealth scraper that fetches in-person NYC events from meetup.com without API credentials. Strategy: parse the server-side-rendered `__NEXT_DATA__` Apollo state (which contains full event data including venue, description, photo, and fee info) from 6 location variants (NYC 10mi, Manhattan 5mi, Brooklyn 5mi, Queens 5mi, Bronx 5mi, NYC 25mi). Yields ~30 unique events per sync across 8 categories (community, fitness, food_drink, comedy, art, sports, film, family). XHR response interception also in place for future upside if Meetup exposes more data. Added `meetup_scrape` to `source_type` pgEnum (migration: `drizzle/0003_meetup_source_type.sql`). Added `scrape:meetup` npm script and added Meetup to `sync-all.ts` orchestrator.
+  - Note: ~30 events/sync is the realistic ceiling without Meetup Pro API access. Their dynamic scroll loads go to an authenticated endpoint.
+- **Source Status** (updated):
+  - ✅ Ticketmaster: ~1,200 events/sync
+  - ✅ Songkick: ~148 events/sync
+  - ✅ Dice: ~30 events/sync
+  - ✅ RA: ~280 events/sync via GraphQL
+  - ✅ iCal/City Parks Foundation: ~30 events/sync
+  - ✅ Meetup: ~30 events/sync (community, fitness, food, social — first non-music community coverage)
+  - ✅ Bandsintown enrichment: backfills missing images
+  - ⚠️ Eventbrite: permanently dead API. Playwright scraper of eventbrite.com is next priority.
+  - ⚠️ NYC Parks Socrata: dataset stale since 2019.
+  - ⚠️ SeatGeek: client built, no `SEATGEEK_CLIENT_ID` configured.
+
+Phase 10 — Eventbrite Scraper (completed 2026-06-09):
+- **Eventbrite Web Scraper** (`scripts/scrape-eventbrite.ts`): Pure HTTP scraper (no Playwright) that parses `window.__SERVER_DATA__` embedded in Eventbrite's SSR HTML. Main listing pages use a nested `events` array; category pages use `search_data.events.results` + `search_data.events.promoted_results`. Pagination uses the `page_count` field from SERVER_DATA. Hits 9 URLs: main events listing (pages 1-3) + 6 category-specific pages (community, food-and-drink, sports-and-fitness, family-and-education, arts--theatre-and-comedy, film-and-media), each paginated up to 3 pages. Venue lat/lng is embedded in SERVER_DATA so geocoding is only needed as a fallback. Yields ~300+ unique events per sync across all major categories. Added `eventbrite_scrape` to `source_type` pgEnum (migration: `drizzle/0004_eventbrite_scrape_source_type.sql`). Added `scrape:eventbrite` npm script and added to `sync-all.ts`.
+- **Source Status** (updated):
+  - ✅ Ticketmaster: ~1,200 events/sync
+  - ✅ Songkick: ~148 events/sync
+  - ✅ Dice: ~30 events/sync
+  - ✅ RA: ~280 events/sync
+  - ✅ iCal/City Parks Foundation: ~30 events/sync
+  - ✅ Meetup: ~30 events/sync
+  - ✅ Eventbrite (scraper): ~300+ events/sync — food_drink (78), community (72), fitness (65), music (23), art (14), family, film, sports, nightlife
+  - ✅ Bandsintown enrichment: backfills missing images
+  - ⚠️ NYC Parks Socrata: dataset stale since 2019.
+  - ⚠️ SeatGeek: client built, no `SEATGEEK_CLIENT_ID` configured.
+
+Phase 11 — NYC Permitted Events (completed 2026-06-09):
+- **NYC Permits Scraper** (`scripts/sync-nyc-permits.ts`): Socrata API client against the NYC Office of Citywide Event Coordination and Management permitted events dataset (`tvpp-9vvx`). No API key required. Ingests 8 public-facing event types: Farmers Market, Plaza Partner Event, Open Street Partner Event, Block Party, Parade, Street Festival, Single Block Festival, Athletic Race / Tour. Fetches events in the next 60 days. Location geocoded via Mapbox (dataset provides street ranges and park names, not lat/lng). externalId uses `event_id_YYYY-MM-DD` composite to handle recurring permits (weekly greenmarkets reuse the same `event_id` across all occurrences). Added `nyc_permits` to `source_type` pgEnum (migration: `drizzle/0005_nyc_permits_source_type.sql`). First sync: 347 events inserted — community (235), food_drink (104, greenmarkets), fitness (8, 5Ks/races).
+- **Source Status** (updated):
+  - ✅ Ticketmaster: ~1,200 events/sync
+  - ✅ Songkick: ~148 events/sync
+  - ✅ Dice: ~30 events/sync
+  - ✅ RA: ~280 events/sync
+  - ✅ iCal/City Parks Foundation: ~30 events/sync
+  - ✅ Meetup: ~30 events/sync
+  - ✅ Eventbrite (scraper): ~300+ events/sync
+  - ✅ NYC Permits: ~350 events/sync — farmers markets, plaza events, block parties, parades
+  - ✅ Bandsintown enrichment: backfills missing images
+  - ⚠️ SeatGeek: client built, no `SEATGEEK_CLIENT_ID` configured.
+
+Phase 12 — iCal Feed Audit & New Sources (completed 2026-06-09):
+- **Audited 50+ NYC venue iCal endpoints** across music venues, cultural institutions, parks, museums, and community orgs. Most return HTML (no iCal export) or are dead. Three new live feeds confirmed and seeded:
+  - ✅ **Prospect Park** (`https://www.prospectpark.org/events/?ical=1`) — 30 events: outdoor concerts, fitness, movies, community events in Brooklyn's main park.
+  - ✅ **Randall's Island Park** (`https://www.randallsisland.org/events/?ical=1`) — 30 events: concerts, sports, festivals on Randall's Island.
+  - ✅ **St. Ann's Warehouse** (`https://stannswarehouse.org/events/?ical=1`) — 8 events: theater, opera, dance, music at DUMBO Brooklyn performing arts venue.
+- Added all three to `scripts/seed-ical-sources.ts`. First sync inserted 68 new events. iCal now covers 4 active feeds (120 events/sync total).
+- **Venues searched but no iCal found**: Brooklyn Music Kitchen (DNS failure), Pioneer Works (redirect, no feed), Housing Works, Caveat, Elsewhere Club, Le Poisson Rouge, Littlefield, Public Records, Nowadays, BAM, Lincoln Center, NYPL, Brooklyn Botanic Garden, NYBG, New Museum, BRIC, Brooklyn Flea, Smorgasburg, Governors Island, and others.
+- **Source Status** (updated):
+  - ✅ iCal feeds (4 active): City Parks Foundation + Prospect Park + Randall's Island + St. Ann's Warehouse — ~120 events/sync total
+
+Next up: SeatGeek credentials (client already built), Luma scraper (community/tech events).
 
 ## What is NOT in scope yet
 
-- Eventbrite Playwright scraper (to replace deprecated API)
+- Eventbrite Playwright scraper (to replace deprecated API) — next priority
+- SeatGeek API credentials (client already built)
+- NYC.gov Events Calendar ingestion
 - Venue portal (claim listing, submit events, view analytics)
 - Email parsing pipeline (LLM-based, for long-tail venues)
-- Meetup.com API integration (community events, run clubs, book clubs, workshops)
-- NYC.gov Events Calendar ingestion
 - Friend coordination / social layer
 - Multi-city expansion (fully threading CityConfig through all ingestors and API endpoints)
 - Payment/billing infrastructure

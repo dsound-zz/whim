@@ -1,2 +1,2 @@
 @AGENTS.md
-@Context.Md
+@GEMINI.MD

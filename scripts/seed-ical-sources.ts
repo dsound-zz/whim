@@ -60,14 +60,29 @@ const ICAL_SOURCES: ICalSourceSeed[] = [
     feedUrl: 'https://www.cityparksfoundation.org/events/?ical=1',
   },
 
-  // ─── Add verified feeds here ───────────────────────────────────────────────
-  // Use the verification steps in the file header before adding.
-  //
-  // Template:
-  // {
-  //   venueName: 'Venue Name',
-  //   feedUrl: 'https://venue.com/events/?ical=1',
-  // },
+  // ─── Prospect Park ─────────────────────────────────────────────────────────
+  // Outdoor concerts, fitness classes, movies, and community events in
+  // Brooklyn's 526-acre park. Verified 2026-06-09: 30 VEVENT entries.
+  {
+    venueName: 'Prospect Park',
+    feedUrl: 'https://www.prospectpark.org/events/?ical=1',
+  },
+
+  // ─── Randall's Island Park ─────────────────────────────────────────────────
+  // Sports fields, concerts, festivals, and outdoor events on Randall's Island
+  // in the East River. Verified 2026-06-09: 30 VEVENT entries.
+  {
+    venueName: "Randall's Island Park",
+    feedUrl: 'https://www.randallsisland.org/events/?ical=1',
+  },
+
+  // ─── St. Ann's Warehouse ───────────────────────────────────────────────────
+  // DUMBO, Brooklyn performing arts venue. Theater, opera, dance, and music
+  // productions. Verified 2026-06-09: 8 VEVENT entries.
+  {
+    venueName: "St. Ann's Warehouse",
+    feedUrl: 'https://stannswarehouse.org/events/?ical=1',
+  },
 ];
 
 async function main(): Promise<void> {
