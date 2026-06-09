@@ -10,6 +10,7 @@ type FeedHeaderProps = {
   onFilterChange: (filter: TimeFilter) => void;
   activeCategory: string | null;
   onCategoryChange: (category: string | null) => void;
+  availableCategories: string[];
   searchQuery: string;
   onSearchChange: (query: string) => void;
   resultCount: number;
@@ -24,6 +25,7 @@ export function FeedHeader({
   onFilterChange,
   activeCategory,
   onCategoryChange,
+  availableCategories,
   searchQuery,
   onSearchChange,
   resultCount,
@@ -142,7 +144,7 @@ export function FeedHeader({
       </div>
 
       {/* Category pills */}
-      <CategoryFilters activeCategory={activeCategory} onCategoryChange={onCategoryChange} />
+      <CategoryFilters activeCategory={activeCategory} onCategoryChange={onCategoryChange} availableCategories={availableCategories} />
 
       {/* Result count */}
       <p className="text-[11px] text-zinc-600 leading-none">

@@ -28,7 +28,7 @@ const PARAM_TO_TIMEFRAME: Record<string, TimeFilter> = {
   "this_week":   "This Week",
 };
 
-export default function FeedMapUI({ initialEvents }: { initialEvents: FeedEvent[] }) {
+export default function FeedMapUI({ initialEvents, availableCategories }: { initialEvents: FeedEvent[]; availableCategories: string[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -299,6 +299,7 @@ export default function FeedMapUI({ initialEvents }: { initialEvents: FeedEvent[
           onFilterChange={setActiveFilter}
           activeCategory={activeCategory}
           onCategoryChange={setActiveCategory}
+          availableCategories={availableCategories}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           resultCount={events.length}

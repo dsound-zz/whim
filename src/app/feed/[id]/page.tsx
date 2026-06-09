@@ -99,7 +99,7 @@ export default async function EventDetailPage({
       {/* Scrollable content — pb clears the fixed action bar */}
       <div className="flex-1 pb-28">
         {/* Back Button */}
-        <div className="sticky top-0 z-10 px-4 pt-4 pb-2 pointer-events-none">
+        <div className="sticky top-0 z-30 px-4 pt-4 pb-2 pointer-events-none">
           <Link
             href={backHref}
             className="pointer-events-auto inline-flex bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/10"

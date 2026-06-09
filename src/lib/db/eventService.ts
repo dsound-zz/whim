@@ -170,7 +170,7 @@ export async function fetchAdminEvents(params: FetchAdminEventsParams = {}): Pro
     return [];
   }
 }
-import { getTimeframeRange } from '@/lib/utils/date';
+import { getTimeframeRange, type Timeframe } from '@/lib/utils/date';
 import { deduplicateEvents, collapseRecurringShows } from '@/lib/utils/deduplicateEvents';
 
 // Minimum trigram similarity threshold.
@@ -178,6 +178,39 @@ import { deduplicateEvents, collapseRecurringShows } from '@/lib/utils/deduplica
 // ORDER BY similarity DESC to surface the best matches at the top.
 const TRGM_THRESHOLD = 0.1;
 
+
+/**
+ * Returns the set of category slugs that have at least one active event
+ * within the given bounding box and timeframe. Used to disable empty
+ * category filter pills in the consumer feed.
+ */
+export async function fetchAvailableCategories(params: {
+  minLat: number; maxLat: number;
+  minLng: number; maxLng: number;
+  timeframe?: Timeframe;
+}): Promise<string[]> {
+  const conditions = [
+    gte(events.lat, params.minLat),
+    lte(events.lat, params.maxLat),
+    gte(events.lng, params.minLng),
+    lte(events.lng, params.maxLng),
+    eq(events.status, 'active'),
+    sql`("end_at" > now() OR ("end_at" IS NULL AND "start_at" > now() - INTERVAL '4 hours'))`,
+  ];
+
+  if (params.timeframe) {
+    const { start, end } = getTimeframeRange(params.timeframe);
+    conditions.push(gte(events.startAt, start));
+    conditions.push(lte(events.startAt, end));
+  }
+
+  const rows = await db
+    .selectDistinct({ category: events.category })
+    .from(events)
+    .where(and(...conditions));
+
+  return rows.map((r) => r.category as string).filter((c): c is string => c !== null);
+}
 
 export async function fetchEventsNearLocation(params: FetchEventsParams) {
   const conditions = [
