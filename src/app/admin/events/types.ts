@@ -1,20 +1,3 @@
-export type AdminEvent = {
-  id: string;
-  title: string;
-  venueName: string | null;
-  address: string | null;
-  lat: number | null;
-  lng: number | null;
-  startAt: Date;
-  endAt: Date | null;
-  isFree: boolean | null;
-  priceMin: number | null;
-  priceMax: number | null;
-  ticketUrl: string | null;
-  sourceType: string;
-  category: string | null;
-  status: string | null;
-  isVerified: boolean | null;
-  confidenceScore: number | null;
-  moreDates?: number;
-};
+// Re-export the canonical AdminEvent type from src/types so existing
+// imports of "./types" within this route continue to work unchanged.
+export type { AdminEvent } from "@/types";

@@ -211,6 +211,19 @@ async function runContentCheck(event: EventData): Promise<ContentCheckOutput> {
   const pageText = stripHtmlTags(rawHtml).slice(0, MAX_PAGE_TEXT_CHARS);
   const pageTextSnippet = pageText.slice(0, MAX_SNIPPET_CHARS);
 
+  // Pre-LLM cancellation scan: detect explicit cancellation language before
+  // spending a Gemini call. If the page clearly says the event is cancelled we
+  // can short-circuit with llmConfirmed=false immediately.
+  const cancellationDetection = detectExplicitCancellation(pageText, event.title);
+  if (cancellationDetection.isCancelled) {
+    return {
+      isSkipped: false,
+      pageTextSnippet,
+      llmConfirmed: false,
+      llmReason: cancellationDetection.reason,
+    };
+  }
+
   let llmResult: LlmEvaluationResponse;
   try {
     llmResult = await evaluatePageWithLlm({
@@ -385,6 +398,50 @@ function stripHtmlTags(html: string): string {
   return cleaned.replace(/\s+/g, ' ').trim();
 }
 
+// ─── Cancellation Detection ───────────────────────────────────────────────────
+
+interface CancellationDetectionResult {
+  isCancelled: boolean;
+  reason: string | null;
+}
+
+/**
+ * Scans stripped page text for explicit cancellation language before calling
+ * the LLM. This avoids spending a Gemini call on events the page already
+ * clearly marks as cancelled (e.g. Eventbrite's "Cancelled Mon, Jun 8 • 8 PM").
+ *
+ * Patterns are intentionally specific to avoid false positives — e.g. a page
+ * about a "Cancel your reservation" button should not trigger this.
+ */
+function detectExplicitCancellation(
+  pageText: string,
+  eventTitle: string
+): CancellationDetectionResult {
+  const CANCELLATION_PATTERNS: RegExp[] = [
+    // Eventbrite: "Cancelled Mon, Jun 8 • 8 PM" or "Cancelled Tuesday, June 10"
+    /\bCancelled\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i,
+    // Generic: "This event has been cancelled"
+    /\bThis\s+event\s+has\s+been\s+cancelled\b/i,
+    // Generic: "Event cancelled" as a standalone phrase
+    /\bEvent\s+cancelled\b/i,
+    // Ticketmaster-style: "This event has been canceled"
+    /\bThis\s+event\s+has\s+been\s+canceled\b/i,
+    // City Parks Foundation / NYC Parks style
+    /\bThis\s+program\s+has\s+been\s+cancell?ed\b/i,
+  ];
+
+  for (const pattern of CANCELLATION_PATTERNS) {
+    if (pattern.test(pageText)) {
+      return {
+        isCancelled: true,
+        reason: `Page contains explicit cancellation language for "${eventTitle}".`,
+      };
+    }
+  }
+
+  return { isCancelled: false, reason: null };
+}
+
 // ─── LLM Evaluation ──────────────────────────────────────────────────────────
 
 interface LlmEvaluationInput {
@@ -420,7 +477,13 @@ You will receive:
 Respond ONLY with valid JSON matching this exact schema:
 {"confirmed": boolean, "reason": string}
 
-- "confirmed": true if the page content clearly indicates the event is scheduled on the expected date at the expected venue. false if the event appears cancelled, the date is wrong, the event is not mentioned, or the page is an error/404.
+Rules for setting "confirmed":
+- true: The page clearly shows the event is scheduled. This includes:
+  * The specific expected date appears on the page alongside the event title/venue.
+  * The page describes the event as recurring (e.g. "every Monday", "every other week", "1st/3rd Wednesdays", "Multiple dates", "weekly", "nightly") AND the title and venue match — a recurring event on the correct day-of-week is considered confirmed even if the exact date is not printed.
+  * The event is a multi-week series (e.g. "6-week class") that started before the expected date and is still running.
+- false: The page shows the event is cancelled, the date is explicitly wrong (a different non-recurring date is listed), the event is not mentioned at all, or the page is a generic error/404.
+
 - "reason": a single concise sentence explaining your verdict.`;
 
   const userPrompt = `Event to verify:

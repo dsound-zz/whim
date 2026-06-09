@@ -1,4 +1,5 @@
 import { geocodeWithMapbox } from '@/lib/utils/geocode';
+import { calculateDistanceMeters } from '@/lib/utils/calculateDistance';
 
 // Known generic centroids that we want to reject
 export const GENERIC_CENTROIDS = [
@@ -22,6 +23,22 @@ export const NYC_BOUNDING_BOX = {
   maxLng: -73.7004,
   mapboxParam: '-74.2591,40.4774,-73.7004,40.9176',
 };
+
+/**
+ * Approximate geographic center of NYC (Columbus Circle area). Used as the
+ * reference point for the post-geocode distance guard.
+ */
+const NYC_CENTROID = { lat: 40.7128, lng: -74.0060 };
+
+/**
+ * Maximum distance in kilometers from the NYC centroid that we consider
+ * "in-market". 80km covers the full metro area (Jones Beach, Asbury Park,
+ * Westchester) without accepting venues in DC, Philadelphia, or beyond.
+ * This is a belt-and-suspenders check: the Mapbox bbox parameter should
+ * catch obvious misses, but sometimes returns a nearest in-bbox snap for
+ * venues that have no NYC presence.
+ */
+const MAX_DISTANCE_FROM_NYC_KM = 80;
 
 /**
  * Returns true if the coordinate is within the NYC bounding box.
@@ -261,6 +278,17 @@ export async function resolveLocationData(
 
   if (fallbackGeo) {
     const isFallbackValid = isValidLocation(fallbackGeo.lat, fallbackGeo.lng);
+    const distanceFromNycKm =
+      calculateDistanceMeters(NYC_CENTROID.lat, NYC_CENTROID.lng, fallbackGeo.lat, fallbackGeo.lng) / 1000;
+
+    if (distanceFromNycKm > MAX_DISTANCE_FROM_NYC_KM) {
+      console.log(
+        `[LocationValidation] Geocode result for "${venueName}" is ${Math.round(distanceFromNycKm)}km from NYC ` +
+        `(>${MAX_DISTANCE_FROM_NYC_KM}km limit) — rejecting as out-of-market.`
+      );
+      return { lat: null, lng: null, isVerified: false };
+    }
+
     if (isFallbackValid) {
       return {
         lat: fallbackGeo.lat,

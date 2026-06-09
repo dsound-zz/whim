@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import FeedMapUI from "./FeedMapUI";
 import { fetchEventsNearLocation } from "@/lib/db/eventService";
+import type { FeedEvent } from "@/types";
 
 type TimeframeValue = "tonight" | "next_2_days" | "this_week";
 
@@ -17,7 +18,7 @@ export default async function FeedPage({
   const userLat = 40.7128;
   const userLng = -74.0060;
   
-  let initialEvents: any[] = [];
+  let initialEvents: FeedEvent[] = [];
   
   try {
     const { events } = await fetchEventsNearLocation({

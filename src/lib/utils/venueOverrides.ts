@@ -432,4 +432,55 @@ export const venueOverrides = [
     lat: 40.7195,
     lng: -73.9951,
   },
+  // ─── Songkick venue name aliases (shorter names Songkick uses) ────────────────
+  // "Birdland" (no suffix) — Songkick uses this; maps to Birdland Jazz Club
+  {
+    name: 'Birdland',
+    address: '315 W 44th St, New York, NY 10036',
+    lat: 40.7588,
+    lng: -73.9897,
+  },
+  // "The Rooftop, Elsewhere" and "Rooftop at Elsewhere" — Songkick variants
+  {
+    name: 'The Rooftop, Elsewhere',
+    address: '599 Johnson Ave, Brooklyn, NY 11237',
+    lat: 40.7094,
+    lng: -73.9234,
+  },
+  {
+    name: 'Rooftop at Elsewhere',
+    address: '599 Johnson Ave, Brooklyn, NY 11237',
+    lat: 40.7094,
+    lng: -73.9234,
+  },
+  // "Racket" — Songkick drops the "NYC" suffix used in our override above
+  {
+    name: 'Racket',
+    address: '431 W 16th St, New York, NY 10011',
+    lat: 40.7431,
+    lng: -74.0074,
+  },
+  // Kitchen and Beer Bar — NYC location (Midtown)
+  {
+    name: 'Kitchen and Beer Bar',
+    address: '489 3rd Ave, New York, NY 10016',
+    lat: 40.7454,
+    lng: -73.9792,
+  },
+  // Tommy Fox's Public House — Hell's Kitchen
+  {
+    name: "Tommy Fox's Public House",
+    address: '406 W 51st St, New York, NY 10019',
+    lat: 40.7630,
+    lng: -73.9935,
+  },
+  // Hackensack Meridian Health Theatre — Red Bank, NJ (outside NYC, but
+  // Songkick includes it in the NYC metro scrape). We override with the correct
+  // coords so the coord check passes rather than flagging drift.
+  {
+    name: 'Hackensack Meridian Health Theatre, Count Basie Center',
+    address: '99 Monmouth St, Red Bank, NJ 07701',
+    lat: 40.3473,
+    lng: -74.0734,
+  },
 ];

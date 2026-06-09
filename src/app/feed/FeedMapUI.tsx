@@ -8,6 +8,8 @@ import { FeedHeader } from "./components/FloatingControls";
 import { EventCardList } from "./components/EventCardList";
 import EventDrawer from "./components/EventDrawer";
 import { useFavorites } from "@/lib/hooks/useFavorites";
+import { buildMapboxCategoryColorExpression } from "@/lib/utils/categoryColors";
+import type { FeedEvent } from "@/types";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -26,7 +28,7 @@ const PARAM_TO_TIMEFRAME: Record<string, TimeFilter> = {
   "this_week":   "This Week",
 };
 
-export default function FeedMapUI({ initialEvents }: { initialEvents: any[] }) {
+export default function FeedMapUI({ initialEvents }: { initialEvents: FeedEvent[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -40,11 +42,11 @@ export default function FeedMapUI({ initialEvents }: { initialEvents: any[] }) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const isMapStyleLoaded = useRef(false);
-  const pendingMapUpdate = useRef<any[] | null>(null);
+  const pendingMapUpdate = useRef<FeedEvent[] | null>(null);
 
   // UI-only state
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [events, setEvents] = useState<any[]>(initialEvents);
+  const [events, setEvents] = useState<FeedEvent[]>(initialEvents);
   const [isLoading, setIsLoading] = useState(false);
   const [mobileViewMode, setMobileViewMode] = useState<MobileViewMode>("list");
 
@@ -87,7 +89,7 @@ export default function FeedMapUI({ initialEvents }: { initialEvents: any[] }) {
   // Single function that writes an events array + optional selectedId to the
   // Mapbox GeoJSON source. If the map isn't ready yet, queues via pendingMapUpdate.
   // This is the ONLY place that calls source.setData — no competing code paths.
-  const pushToMap = useCallback((data: any[], selectedId: string | null) => {
+  const pushToMap = useCallback((data: FeedEvent[], selectedId: string | null) => {
     if (!map.current) return;
 
     if (!isMapStyleLoaded.current) {
@@ -130,7 +132,7 @@ export default function FeedMapUI({ initialEvents }: { initialEvents: any[] }) {
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch events");
       const result = await res.json();
-      const fetched = result.data || [];
+      const fetched: FeedEvent[] = result.data || [];
 
       setEvents(fetched);
       setSelectedEventId(null);
@@ -200,27 +202,13 @@ export default function FeedMapUI({ initialEvents }: { initialEvents: any[] }) {
         },
       });
 
-      // Main markers — colored by category
+      // Main markers — colored by category using shared constant
       currentMap.addLayer({
         id: "event-markers",
         type: "circle",
         source: "events",
         paint: {
-          "circle-color": [
-            "match", ["get", "category"],
-            "music",      "#6366f1",
-            "comedy",     "#f59e0b",
-            "art",        "#f43f5e",
-            "theater",    "#ef4444",
-            "food_drink", "#10b981",
-            "nightlife",  "#d946ef",
-            "sports",     "#0ea5e9",
-            "community",  "#14b8a6",
-            "fitness",    "#84cc16",
-            "family",     "#f97316",
-            "film",       "#06b6d4",
-            "#71717a", // default / other
-          ],
+          "circle-color": buildMapboxCategoryColorExpression() as mapboxgl.Expression,
           "circle-radius": [
             "case", ["==", ["get", "isSelected"], true], 10, 7
           ],
