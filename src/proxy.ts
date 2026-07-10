@@ -3,10 +3,14 @@ import type { NextRequest } from 'next/server';
 import { findApiKeyByValue, incrementCallsToday } from './lib/db/apiKeyService';
 
 // ── Admin Basic Auth ───────────────────────────────────────────────────────────
-const ADMIN_USERNAME = 'demiansims';
-const ADMIN_PASSWORD = 'BaFlw8083!';
+// Credentials are read from ADMIN_USERNAME / ADMIN_PASSWORD env vars — set them
+// in .env locally and in the Railway service's environment variables in production.
 
 function isAdminAuthenticated(request: NextRequest): boolean {
+  const adminUsername = process.env.ADMIN_USERNAME;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminUsername || !adminPassword) return false;
+
   const authorizationHeader = request.headers.get('authorization');
   if (!authorizationHeader) return false;
 
@@ -21,7 +25,7 @@ function isAdminAuthenticated(request: NextRequest): boolean {
   const username = decoded.slice(0, colonIndex);
   const password = decoded.slice(colonIndex + 1);
 
-  return username === ADMIN_USERNAME && password === ADMIN_PASSWORD;
+  return username === adminUsername && password === adminPassword;
 }
 
 // In-memory rate limiting map for public submissions
