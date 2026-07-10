@@ -65,9 +65,17 @@ export const venues = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     name: text("name").notNull(),
+    // Canonical, comparison-normalized form of `name` (diacritics stripped,
+    // lowercased, punctuation collapsed). Written by the venue resolver and used
+    // as the primary exact-match key so "Rosalía" and "ROSALIA" collapse.
+    normalizedName: text("normalized_name"),
     address: text("address"),
     lat: doublePrecision("lat"),
     lng: doublePrecision("lng"),
+    // When this venue is a distinct room/stage within a larger venue
+    // (e.g. "Elsewhere - Zone One" → "Elsewhere"), this points at the parent.
+    // Nullable; no FK constraint yet so the resolver can set it opportunistically.
+    parentVenueId: uuid("parent_venue_id"),
     websiteUrl: text("website_url"),
     googlePlaceId: text("google_place_id"),
     claimed: boolean("claimed").default(false),
@@ -77,6 +85,36 @@ export const venues = pgTable(
   (table) => [
     index("venues_lat_lng_idx").on(table.lat, table.lng),
     uniqueIndex("venues_google_place_idx").on(table.googlePlaceId),
+    // Fast exact-match lookups by the resolver. Not unique yet — existing seed
+    // data may contain collisions that a later slice will dedupe.
+    index("venues_normalized_name_idx").on(table.normalizedName),
+  ]
+);
+
+// ─── Venue aliases ───────────────────────────────────────
+// Every raw venue-name string a source has ever emitted for a canonical venue.
+// The resolver records a new alias whenever it matches an incoming name to an
+// existing venue by proximity, so future lookups hit the fast exact-alias path
+// instead of re-running geometric matching.
+
+export const venueAliases = pgTable(
+  "venue_aliases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    venueId: uuid("venue_id")
+      .notNull()
+      .references(() => venues.id, { onDelete: "cascade" }),
+    // The raw name as it appeared from the source (kept for auditability).
+    alias: text("alias").notNull(),
+    // Normalized form of `alias` — the actual lookup key.
+    normalizedAlias: text("normalized_alias").notNull(),
+    // Which source first produced this alias (debugging / provenance).
+    sourceType: text("source_type"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("venue_aliases_normalized_idx").on(table.normalizedAlias),
+    index("venue_aliases_venue_idx").on(table.venueId),
   ]
 );
 
