@@ -156,6 +156,7 @@ export async function ingestICalFeed(
               imageUrl: eventToInsert.imageUrl,
               startAt: eventToInsert.startAt,
               endAt: eventToInsert.endAt,
+              venueId: eventToInsert.venueId,
               venueName: eventToInsert.venueName,
               address: eventToInsert.address,
               lat: eventToInsert.lat,

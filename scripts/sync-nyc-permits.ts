@@ -146,6 +146,7 @@ async function main(): Promise<void> {
   const { geocodeWithMapbox } = await import('../src/lib/utils/geocode');
   const { isWithinNYC } = await import('../src/lib/ingestion/location-validation');
   const { updateIngestionSourceStatus } = await import('../src/lib/db/ingestionService');
+  const { resolveVenueSafely } = await import('../src/lib/db/venueService');
   const { buildInitialTicketUrls } = await import('../src/lib/utils/deduplicateAtIngestion');
 
   console.log('[NYCPermits] Starting sync:', new Date().toISOString());
@@ -235,6 +236,16 @@ async function main(): Promise<void> {
       const category = mapEventTypeToCategory(permit.event_type);
       const description = buildDescription(permit);
 
+      // Resolve to a canonical venue. For recurring permits (weekly greenmarkets,
+      // plaza events) this collapses every occurrence to one venue + shared coords.
+      const resolvedVenue = await resolveVenueSafely({
+        name: normalizedTitle,
+        address: resolvedAddress,
+        lat,
+        lng,
+        sourceType: 'nyc_permits',
+      });
+
       // Recurring permits share the same event_id — append the date (YYYY-MM-DD)
       // so each occurrence gets a distinct externalId.
       const occurrenceDate = permit.start_date_time.slice(0, 10);
@@ -247,10 +258,11 @@ async function main(): Promise<void> {
         imageUrl: null as string | null,
         startAt,
         endAt: dateValidation.sanitizedEndAt,
+        venueId: resolvedVenue?.venueId ?? null,
         venueName: normalizedTitle,
         address: resolvedAddress,
-        lat,
-        lng,
+        lat: resolvedVenue?.lat ?? lat,
+        lng: resolvedVenue?.lng ?? lng,
         isFree: true,   // All city-permitted public events are free to attend
         priceMin: null as number | null,
         priceMax: null as number | null,
