@@ -55,6 +55,9 @@ export interface IncomingEventForDedup {
   externalId: string;
   sourceType: string;
   title: string;
+  /** Canonical venue id from the registry. When present on both events, it is
+   *  the authoritative venue-match signal (beats fuzzy name/coord matching). */
+  venueId?: string | null;
   venueName: string | null;
   lat: number | null;
   lng: number | null;
@@ -97,10 +100,25 @@ function areStartTimesClose(timeA: Date, timeB: Date): boolean {
   return Math.abs(timeA.getTime() - timeB.getTime()) <= THIRTY_MINUTES_MS;
 }
 
+/**
+ * Returns true if two event titles plausibly name the same show. Beyond plain
+ * Jaccard overlap, this accepts full token containment — the case that broke the
+ * old threshold: "Rosalía" ⊆ "Rosalía: LUX TOUR 2026", or an artist name inside
+ * an artist + tour-name string. Containment is only trusted alongside the caller's
+ * venue + ±30min gates, which make a false merge of two distinct shows unlikely.
+ */
 function areTitlesSimilar(titleA: string, titleB: string): boolean {
   const tokensA = tokenize(titleA);
   const tokensB = tokenize(titleB);
-  return jaccardSimilarity(tokensA, tokensB) >= MIN_TITLE_SIMILARITY;
+  if (tokensA.size === 0 || tokensB.size === 0) return false;
+  if (jaccardSimilarity(tokensA, tokensB) >= MIN_TITLE_SIMILARITY) return true;
+
+  // Token containment: every token of the shorter title appears in the longer.
+  const [small, large] = tokensA.size <= tokensB.size ? [tokensA, tokensB] : [tokensB, tokensA];
+  for (const token of small) {
+    if (!large.has(token)) return false;
+  }
+  return true;
 }
 
 
@@ -136,6 +154,7 @@ export async function findCanonicalMatch(
     .select({
       id: events.id,
       title: events.title,
+      venueId: events.venueId,
       venueName: events.venueName,
       lat: events.lat,
       lng: events.lng,
@@ -159,10 +178,19 @@ export async function findCanonicalMatch(
 
   for (const candidate of candidates) {
     const timeMatch = areStartTimesClose(new Date(candidate.startAt), incoming.startAt);
-    const venueMatch = areVenuesSimilar(
-      candidate.venueName, candidate.lat, candidate.lng,
-      incoming.venueName, incoming.lat, incoming.lng
-    );
+
+    // Venue match: when both events carry a canonical venueId from the registry,
+    // that identity is authoritative (this is the whole point of the registry —
+    // "Madison Square Garden" from Ticketmaster and Songkick now share an id).
+    // Fall back to fuzzy name/coord matching only when a venueId is missing.
+    const venueMatch =
+      incoming.venueId != null && candidate.venueId != null
+        ? incoming.venueId === candidate.venueId
+        : areVenuesSimilar(
+            candidate.venueName, candidate.lat, candidate.lng,
+            incoming.venueName, incoming.lat, incoming.lng
+          );
+
     const titleMatch = areTitlesSimilar(candidate.title, incoming.title);
 
     if (timeMatch && venueMatch && titleMatch) {

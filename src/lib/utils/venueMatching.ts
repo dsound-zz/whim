@@ -13,6 +13,8 @@ import { calculateDistanceMiles } from '@/lib/utils/calculateDistance';
 export function normalizeForComparison(str: string | null | undefined): string {
   if (!str) return '';
   return str
+    .normalize('NFKD')            // decompose accents so "Rosalía" folds to "Rosalia"
+    .replace(/[̀-ͯ]/g, '') // strip combining diacritical marks
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
     .trim();
@@ -41,6 +43,8 @@ export function jaccardSimilarity(tokensA: Set<string>, tokensB: Set<string>): n
 export function tokenize(str: string): Set<string> {
   return new Set(
     str
+      .normalize('NFKD')            // fold accents ("Rosalía" → "Rosalia") before tokenizing
+      .replace(/[̀-ͯ]/g, '') // strip combining diacritical marks
       .toLowerCase()
       .split(/[^a-z0-9]+/)
       .filter((token) => token.length > 1)

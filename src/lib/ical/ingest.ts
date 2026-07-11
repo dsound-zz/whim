@@ -120,6 +120,7 @@ export async function ingestICalFeed(
           externalId: normalizedEvent.externalId,
           sourceType: 'ical',
           title: normalizedEvent.title,
+          venueId: eventToInsert.venueId,
           venueName: normalizedEvent.venueName,
           lat: normalizedEvent.lat,
           lng: normalizedEvent.lng,

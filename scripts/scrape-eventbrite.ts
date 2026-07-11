@@ -417,6 +417,7 @@ async function main(): Promise<void> {
         externalId: eventToInsert.externalId,
         sourceType: eventToInsert.sourceType,
         title: eventToInsert.title,
+        venueId: eventToInsert.venueId,
         venueName: eventToInsert.venueName,
         lat: eventToInsert.lat,
         lng: eventToInsert.lng,
