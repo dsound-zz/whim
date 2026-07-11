@@ -2,6 +2,7 @@ import { db } from '@/db';
 import { events } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { resolveLocationData } from '@/lib/ingestion/location-validation';
+import { resolveVenueSafely } from '@/lib/db/venueService';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
@@ -253,12 +254,27 @@ export async function processDiceRawEvent(
   const address = options.forcedAddress ?? raw.address;
   let isVerified = false;
 
+  let venueId: string | null = null;
   if (venueName && venueName !== 'Unknown Venue') {
     const addressString = address || `${venueName}, New York, NY`;
     const locationData = await resolveLocationData(venueName, addressString, lat, lng);
     lat = locationData.lat;
     lng = locationData.lng;
     isVerified = locationData.isVerified;
+
+    // Canonical venue resolution: venueId + shared registry coordinates.
+    const resolved = await resolveVenueSafely({
+      name: venueName,
+      address: addressString,
+      lat,
+      lng,
+      sourceType: 'dice_scrape',
+    });
+    if (resolved) {
+      venueId = resolved.venueId;
+      lat = resolved.lat;
+      lng = resolved.lng;
+    }
   }
 
   const eventToInsert = {
@@ -271,6 +287,7 @@ export async function processDiceRawEvent(
     imageUrl: raw.imageUrl,
     startAt,
     endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(startAt, category),
+    venueId,
     venueName,
     address,
     lat,

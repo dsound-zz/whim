@@ -21,6 +21,7 @@ import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
 import { isWithinNYC } from '@/lib/ingestion/location-validation';
+import { resolveVenueSafely } from '@/lib/db/venueService';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -221,6 +222,16 @@ async function processEventbritePayload(
       // Event is free if explicitly flagged OR if the min price is 0
       const isEventFree = (ebEvent.is_free === true) || (parsedPriceMin !== null && parsedPriceMin === 0);
 
+      const rawVenueName = venueData?.name || 'Unknown Venue';
+      const rawAddress = venueData?.address?.localized_address_display || null;
+      const resolvedVenue = await resolveVenueSafely({
+        name: rawVenueName,
+        address: rawAddress,
+        lat: parsedLat,
+        lng: parsedLng,
+        sourceType: 'eventbrite_api',
+      });
+
       const eventToInsert = {
         externalId: ebEvent.id,
         sourceType: 'eventbrite_api' as const,
@@ -241,10 +252,11 @@ async function processEventbritePayload(
         })(),
         startAt: rawStartAt,
         endAt: dateValidation.sanitizedEndAt,
-        venueName: venueData?.name || 'Unknown Venue',
-        address: venueData?.address?.localized_address_display || null,
-        lat: parsedLat,
-        lng: parsedLng,
+        venueId: resolvedVenue?.venueId ?? null,
+        venueName: rawVenueName,
+        address: rawAddress,
+        lat: resolvedVenue?.lat ?? parsedLat,
+        lng: resolvedVenue?.lng ?? parsedLng,
         isFree: isEventFree,
         priceMin: isEventFree ? null : parsedPriceMin,
         priceMax: isEventFree ? null : parsedPriceMax,

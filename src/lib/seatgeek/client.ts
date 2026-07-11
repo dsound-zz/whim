@@ -17,6 +17,7 @@ import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
 import { estimateEndTime } from '@/lib/utils/estimateEndTime';
+import { resolveVenueSafely } from '@/lib/db/venueService';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -187,6 +188,17 @@ async function processSeatGeekPayload(
       const imageUrl = sgEvent.performers?.[0]?.image ?? null;
       const isFree = sgEvent.stats.lowest_price === 0;
 
+      const sgAddress = venue.address
+        ? `${venue.address}, ${venue.city}, ${venue.state} ${venue.postal_code}`
+        : `${venue.city}, ${venue.state}`;
+      const resolvedVenue = await resolveVenueSafely({
+        name: venue.name,
+        address: sgAddress,
+        lat: venue.location.lat,
+        lng: venue.location.lon,
+        sourceType: 'seatgeek_api',
+      });
+
       const eventToInsert = {
         externalId: String(sgEvent.id),
         sourceType: 'seatgeek_api' as const,
@@ -196,12 +208,11 @@ async function processSeatGeekPayload(
         imageUrl,
         startAt: rawStartAt,
         endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(rawStartAt, category),
+        venueId: resolvedVenue?.venueId ?? null,
         venueName: venue.name,
-        address: venue.address
-          ? `${venue.address}, ${venue.city}, ${venue.state} ${venue.postal_code}`
-          : `${venue.city}, ${venue.state}`,
-        lat: venue.location.lat,
-        lng: venue.location.lon,
+        address: sgAddress,
+        lat: resolvedVenue?.lat ?? venue.location.lat,
+        lng: resolvedVenue?.lng ?? venue.location.lon,
         isFree,
         priceMin: sgEvent.stats.lowest_price ?? null,
         priceMax: sgEvent.stats.highest_price ?? null,

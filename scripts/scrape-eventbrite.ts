@@ -221,6 +221,7 @@ async function main(): Promise<void> {
   const { geocodeWithMapbox } = await import('../src/lib/utils/geocode');
   const { isWithinNYC } = await import('../src/lib/ingestion/location-validation');
   const { updateIngestionSourceStatus } = await import('../src/lib/db/ingestionService');
+  const { resolveVenueSafely } = await import('../src/lib/db/venueService');
   const {
     findCanonicalMatch,
     mergeIntoCanonical,
@@ -379,6 +380,14 @@ async function main(): Promise<void> {
       const externalId = getEventId(event);
       const ticketUrl = event.tickets_url ?? event.url;
 
+      const resolvedVenue = await resolveVenueSafely({
+        name: venueName,
+        address: resolvedAddress,
+        lat,
+        lng,
+        sourceType: 'eventbrite_scrape',
+      });
+
       const eventToInsert = {
         externalId,
         sourceType: 'eventbrite_scrape' as const,
@@ -388,10 +397,11 @@ async function main(): Promise<void> {
         imageUrl,
         startAt,
         endAt: dateValidation.sanitizedEndAt,
+        venueId: resolvedVenue?.venueId ?? null,
         venueName,
         address: resolvedAddress,
-        lat,
-        lng,
+        lat: resolvedVenue?.lat ?? lat,
+        lng: resolvedVenue?.lng ?? lng,
         isFree: false,      // Price not available in SERVER_DATA; assume paid unless TBD
         priceMin: null as number | null,
         priceMax: null as number | null,

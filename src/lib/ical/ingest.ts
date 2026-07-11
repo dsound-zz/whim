@@ -21,6 +21,7 @@ import {
   type IncomingEventForDedup,
 } from '@/lib/utils/deduplicateAtIngestion';
 import { updateIngestionSourceStatus } from '@/lib/db/ingestionService';
+import { resolveVenueSafely } from '@/lib/db/venueService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,14 @@ export async function ingestICalFeed(
 
     for (const normalizedEvent of normalizedEvents) {
       try {
+        const resolvedVenue = await resolveVenueSafely({
+          name: normalizedEvent.venueName ?? 'Unknown Venue',
+          address: normalizedEvent.address,
+          lat: normalizedEvent.lat,
+          lng: normalizedEvent.lng,
+          sourceType: 'ical',
+        });
+
         const eventToInsert = {
           externalId: normalizedEvent.externalId,
           sourceType: 'ical' as const,
@@ -91,10 +100,11 @@ export async function ingestICalFeed(
           startAt: normalizedEvent.startAt,
           endAt: normalizedEvent.endAt,
           recurrenceRule: normalizedEvent.recurrenceRule,
+          venueId: resolvedVenue?.venueId ?? null,
           venueName: normalizedEvent.venueName,
           address: normalizedEvent.address,
-          lat: normalizedEvent.lat,
-          lng: normalizedEvent.lng,
+          lat: resolvedVenue?.lat ?? normalizedEvent.lat,
+          lng: resolvedVenue?.lng ?? normalizedEvent.lng,
           isFree: normalizedEvent.isFree,
           priceMin: normalizedEvent.priceMin,
           priceMax: normalizedEvent.priceMax,

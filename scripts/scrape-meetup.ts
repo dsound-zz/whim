@@ -144,6 +144,7 @@ async function main(): Promise<void> {
   const { geocodeWithMapbox } = await import('../src/lib/utils/geocode');
   const { isWithinNYC } = await import('../src/lib/ingestion/location-validation');
   const { updateIngestionSourceStatus } = await import('../src/lib/db/ingestionService');
+  const { resolveVenueSafely } = await import('../src/lib/db/venueService');
   const {
     findCanonicalMatch,
     mergeIntoCanonical,
@@ -361,6 +362,14 @@ async function main(): Promise<void> {
 
       const ticketUrl = event.eventUrl;
 
+      const resolvedVenue = await resolveVenueSafely({
+        name: venueName,
+        address: resolvedAddress,
+        lat,
+        lng,
+        sourceType: 'meetup_scrape',
+      });
+
       const eventToInsert = {
         externalId: event.id,
         sourceType: 'meetup_scrape' as const,
@@ -370,10 +379,11 @@ async function main(): Promise<void> {
         imageUrl,
         startAt,
         endAt: dateValidation.sanitizedEndAt,
+        venueId: resolvedVenue?.venueId ?? null,
         venueName,
         address: resolvedAddress,
-        lat,
-        lng,
+        lat: resolvedVenue?.lat ?? lat,
+        lng: resolvedVenue?.lng ?? lng,
         isFree,
         priceMin,
         priceMax,

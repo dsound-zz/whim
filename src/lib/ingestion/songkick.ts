@@ -2,6 +2,7 @@ import { db } from '@/db';
 import { events, ingestionSources, venues } from '@/db/schema';
 import { and, eq, ilike } from 'drizzle-orm';
 import { resolveLocationData } from './location-validation';
+import { resolveVenueSafely } from '@/lib/db/venueService';
 import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle, isTitleJustVenueName } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
@@ -77,6 +78,17 @@ export async function normalizeSongkickEvent(
     rawEvent.lng
   );
 
+  // Resolve to a canonical venue (identity + shared coordinates). Passes the
+  // already-validated coords so the registry won't re-geocode; venueId + registry
+  // coordinates win, venueName keeps Songkick's own label for display.
+  const resolved = await resolveVenueSafely({
+    name: rawEvent.venueName,
+    address: addressString,
+    lat: locationData.lat,
+    lng: locationData.lng,
+    sourceType: 'songkick_scrape',
+  });
+
   return {
     externalId: rawEvent.songkickId,
     sourceType: 'songkick_scrape' as const,
@@ -89,10 +101,11 @@ export async function normalizeSongkickEvent(
     imageUrl: rawEvent.imageUrl,
     startAt: rawStartAt,
     endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(rawStartAt, category),
+    venueId: resolved?.venueId ?? null,
     venueName: rawEvent.venueName,
     address: addressString,
-    lat: locationData.lat,
-    lng: locationData.lng,
+    lat: resolved?.lat ?? locationData.lat,
+    lng: resolved?.lng ?? locationData.lng,
     isFree: false,             // Songkick events are almost universally ticketed
     priceMin: null,            // Songkick doesn't expose price in listings
     priceMax: null,

@@ -11,6 +11,7 @@ import {
   buildInitialTicketUrls,
   type IncomingEventForDedup,
 } from '@/lib/utils/deduplicateAtIngestion';
+import { resolveVenue } from '@/lib/db/venueService';
 
 const TICKETMASTER_API_URL = 'https://app.ticketmaster.com/discovery/v2';
 
@@ -129,6 +130,38 @@ async function processTicketmasterPayload(tmEvents: any[]) {
 
       const eventStatus = tmEvent.dates?.status?.code === 'cancelled' ? 'cancelled' : 'active';
 
+      // Raw venue data as TM reports it (kept as the event's display label).
+      const rawVenueName = venueData?.name || 'Unknown Venue';
+      const rawAddress = venueData
+        ? `${venueData.address?.line1 || ''}, ${venueData.city?.name || ''}`.trim()
+        : null;
+      const rawLat = venueData?.location?.latitude ? parseFloat(venueData.location.latitude) : null;
+      const rawLng = venueData?.location?.longitude ? parseFloat(venueData.location.longitude) : null;
+
+      // Resolve to a canonical venue. venueId + registry coordinates become
+      // authoritative; the event keeps TM's own venueName for display. Falls
+      // back to raw TM coordinates if resolution fails, so ingestion never
+      // breaks on the registry.
+      let venueId: string | null = null;
+      let resolvedLat = rawLat;
+      let resolvedLng = rawLng;
+      try {
+        const resolvedVenue = await resolveVenue({
+          name: rawVenueName,
+          address: rawAddress,
+          lat: rawLat,
+          lng: rawLng,
+          sourceType: 'ticketmaster_api',
+        });
+        if (resolvedVenue) {
+          venueId = resolvedVenue.venueId;
+          resolvedLat = resolvedVenue.lat;
+          resolvedLng = resolvedVenue.lng;
+        }
+      } catch (venueError) {
+        console.error(`[Ticketmaster] Venue resolution failed for "${rawVenueName}":`, venueError);
+      }
+
       const eventToInsert = {
         externalId: tmEvent.id,
         sourceType: 'ticketmaster_api' as const,
@@ -138,10 +171,11 @@ async function processTicketmasterPayload(tmEvents: any[]) {
         imageUrl: selectBestTicketmasterImage(tmEvent.images),
         startAt: rawStartAt,
         endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(rawStartAt, category),
-        venueName: venueData?.name || 'Unknown Venue',
-        address: venueData ? `${venueData.address?.line1 || ''}, ${venueData.city?.name || ''}`.trim() : null,
-        lat: venueData?.location?.latitude ? parseFloat(venueData.location.latitude) : null,
-        lng: venueData?.location?.longitude ? parseFloat(venueData.location.longitude) : null,
+        venueId,
+        venueName: rawVenueName,
+        address: rawAddress,
+        lat: resolvedLat,
+        lng: resolvedLng,
         isFree: priceData?.min === 0 && priceData?.max === 0,
         priceMin: priceData?.min ?? null,
         priceMax: priceData?.max ?? null,

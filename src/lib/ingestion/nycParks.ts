@@ -5,6 +5,7 @@ import { validateEventDates } from '@/lib/utils/validateEventDates';
 import { normalizeEventTitle } from '@/lib/utils/normalizeEventTitle';
 import { classifyEventCategory } from '@/lib/utils/categorizeEvent';
 import { geocodeWithMapbox } from '@/lib/utils/geocode';
+import { resolveVenueSafely } from '@/lib/db/venueService';
 import {
   findCanonicalMatch,
   mergeIntoCanonical,
@@ -253,6 +254,19 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
           skipLlmFallback: false,
         });
 
+        // Canonical venue resolution: venueId + shared registry coordinates.
+        const resolvedVenue = await resolveVenueSafely({
+          name: venueName,
+          address,
+          lat,
+          lng,
+          sourceType: 'nyc_parks_api',
+        });
+        if (resolvedVenue) {
+          lat = resolvedVenue.lat;
+          lng = resolvedVenue.lng;
+        }
+
         const eventToInsert = {
           externalId: rawEvent.event_id,
           sourceType: 'nyc_parks_api' as const,
@@ -262,6 +276,7 @@ export async function runNYCParksIngestion(): Promise<IngestionResult> {
           imageUrl,
           startAt,
           endAt,
+          venueId: resolvedVenue?.venueId ?? null,
           venueName,
           address,
           lat,

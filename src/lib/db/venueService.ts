@@ -25,7 +25,7 @@ import { normalizeVenueName, tokenizeVenueName } from '@/lib/utils/normalizeVenu
 import { jaccardSimilarity } from '@/lib/utils/venueMatching';
 import { calculateDistanceMeters } from '@/lib/utils/calculateDistance';
 import { geocodeWithMapbox } from '@/lib/utils/geocode';
-import { isValidLocation } from '@/lib/ingestion/location-validation';
+import { isValidLocation, isOutsideNYCMunicipality } from '@/lib/ingestion/location-validation';
 
 // ─── Tuning ─────────────────────────────────────────────────────────────────
 
@@ -205,6 +205,20 @@ export async function mergeVenuesInto(
   return { mergedVenues: duplicates.length, repointedEvents: repointed.length };
 }
 
+/**
+ * Non-throwing wrapper around {@link resolveVenue} for ingestion hot paths.
+ * The venue registry must never break an ingest — on any error this logs and
+ * returns null so the caller falls back to its own coordinate handling.
+ */
+export async function resolveVenueSafely(input: ResolveVenueInput): Promise<ResolvedVenue | null> {
+  try {
+    return await resolveVenue(input);
+  } catch (error) {
+    console.error(`[VenueService] resolveVenue failed for "${input.name}":`, error);
+    return null;
+  }
+}
+
 // ─── Internals ──────────────────────────────────────────────────────────────
 
 /**
@@ -232,6 +246,12 @@ async function resolveCoordinates(
 ): Promise<{ lat: number; lng: number } | null> {
   if (input.lat != null && input.lng != null && isValidLocation(input.lat, input.lng)) {
     return { lat: input.lat, lng: input.lng };
+  }
+  // Don't geocode a venue whose address names a non-NYC municipality — a
+  // bbox-constrained Mapbox query would snap it to a same-named NYC street.
+  // (Mirrors the guard resolveLocationData applies for the scraper paths.)
+  if (isOutsideNYCMunicipality(input.address)) {
+    return null;
   }
   const query = input.address ? `${input.name}, ${input.address}` : `${input.name}, New York, NY`;
   const geo = await geocodeWithMapbox(input.name, query);
