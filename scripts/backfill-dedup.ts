@@ -38,6 +38,7 @@ const SOURCE_TRUST: Record<string, number> = {
   rss: 0.45,
   email: 0.4,
   submission: 0.4,
+  llm_extraction: 0.45,
 };
 
 const shouldExecute = process.argv.includes('--execute');

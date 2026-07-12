@@ -32,6 +32,7 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "meetup_scrape",
   "eventbrite_scrape",
   "nyc_permits",
+  "llm_extraction",
 ]);
 
 export const eventStatusEnum = pgEnum("event_status", [

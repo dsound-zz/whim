@@ -20,6 +20,7 @@
     "scrape:meetup": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/scrape-meetup.ts",
     "scrape:eventbrite": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/scrape-eventbrite.ts",
     "sync:nyc-permits": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-nyc-permits.ts",
+    "scrape:llm-venues": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/scrape-llm-venues.ts",
     "enrich:bandsintown": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/enrich-bandsintown.ts",
     "test:geocoding": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/smoke-test-geocoding.ts",
     "expire:events": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/expire-events.ts",

@@ -85,6 +85,7 @@ const SOURCE_TRUST_SCORES: Record<string, number> = {
   submission: 0.4,
   dice_api: 0.7,
   seatgeek_api: 0.9,
+  llm_extraction: 0.45,
 };
 
 function getTrustScore(sourceType: string): number {
