@@ -78,6 +78,13 @@ export interface ICalFetchResult {
 const RECURRENCE_EXPANSION_DAYS = 60;
 const CONFIDENCE_SCORE = 0.5;
 
+/**
+ * Bare borough names some feeds use as LOCATION when the actual venue isn't
+ * specified there. Too generic to resolve as a venue on their own — see
+ * isBareBoroughName / extractVenueNameFromTitle below.
+ */
+const NYC_BOROUGHS = new Set(['manhattan', 'brooklyn', 'queens', 'bronx', 'staten island']);
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -181,6 +188,24 @@ function parseLocation(
     venueName: isLikelyVenueName ? firstSegment : defaultVenueName,
     rawAddress: locationStr,
   };
+}
+
+function isBareBoroughName(venueName: string): boolean {
+  return NYC_BOROUGHS.has(venueName.trim().toLowerCase());
+}
+
+/**
+ * Recovers a specific venue name from the event title when LOCATION only
+ * gives a borough. City Parks Foundation's "It's My Park" volunteer series
+ * runs at dozens of distinct parks across the city but never puts the park
+ * name in LOCATION — every such event resolved to the same borough-level
+ * venue (e.g. one venue literally named "Brooklyn") until this was added,
+ * silently merging McKinley Park, Marine Park, McCarren Park, and others
+ * into a single wrong-location venue.
+ */
+function extractVenueNameFromTitle(title: string): string | null {
+  const match = title.match(/^It'?s My Park (?:at|@)\s+(.+)$/i);
+  return match ? match[1].trim() : null;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -306,20 +331,40 @@ export async function fetchAndParseICalFeed(
       // ─── Location / geocoding ──────────────────────────────────────────────
       // Geocode once per VEVENT (the location doesn't change between occurrences).
 
-      const { venueName, rawAddress } = parseLocation(
+      const { venueName: locationVenueName, rawAddress } = parseLocation(
         vevent.location,
         defaultVenueName
       );
 
+      // When LOCATION is only a borough, try to recover the real venue from
+      // the title (see extractVenueNameFromTitle) before falling back to the
+      // borough itself as the venue name.
+      const specificVenueName = isBareBoroughName(locationVenueName)
+        ? extractVenueNameFromTitle(title)
+        : null;
+      const venueName = specificVenueName ?? locationVenueName;
+      // Geocode the recovered venue against the borough the feed gave us,
+      // not against rawAddress (which is just the borough name here too).
+      const geocodeAddress = specificVenueName ? locationVenueName : rawAddress;
+
       let lat: number | null = null;
       let lng: number | null = null;
-      let address: string | null = rawAddress;
+      let address: string | null = geocodeAddress;
 
-      const geocodeQuery = rawAddress
-        ? `${venueName}, ${rawAddress}`
+      const geocodeQuery = geocodeAddress
+        ? `${venueName}, ${geocodeAddress}`
         : `${venueName}, New York City, NY, USA`;
 
-      const geocoded = await geocodeWithMapbox(venueName, geocodeQuery);
+      // A title-recovered venue name has no street address to anchor the
+      // query, so Mapbox is more likely to return a low-confidence partial
+      // match (e.g. "McKinley Park, Brooklyn" resolving to "Park Ave,
+      // Brooklyn" — a street with no connection to the park) than to fail
+      // outright. minRelevance rejects those rather than storing them; a
+      // rejected geocode falls through to resolveVenue's own fallback
+      // geocode, which applies the same threshold.
+      const geocoded = await geocodeWithMapbox(venueName, geocodeQuery, {
+        minRelevance: specificVenueName ? 0.8 : undefined,
+      });
       if (geocoded) {
         lat = geocoded.lat;
         lng = geocoded.lng;

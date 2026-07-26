@@ -32,6 +32,7 @@
     "db:backfill-venue-names": "tsx -r dotenv/config scripts/backfill-venue-normalized-names.ts",
     "db:dedupe-venues": "tsx -r dotenv/config scripts/dedupe-seed-venues.ts",
     "smoke:venue-resolver": "tsx -r dotenv/config scripts/smoke-venue-resolver.ts",
+    "smoke:pagination": "tsx -r dotenv/config -r tsconfig-paths/register scripts/smoke-pagination.ts",
     "sync:all": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-all.ts",
     "sync:seatgeek": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/sync-seatgeek.ts",
     "reset:api-counters": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/reset-api-key-counters.ts",
