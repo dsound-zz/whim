@@ -39,6 +39,16 @@ export interface GeocodingOptions {
   skipVenueDbLookup?: boolean;
   /** If true, sanitize the query string to strip secondary unit designations */
   sanitizeAddress?: boolean;
+  /**
+   * Minimum Mapbox `relevance` (0–1) to accept a result. Mapbox always returns
+   * its best guess rather than nothing, so an unresolvable query (notably NYC
+   * street intersections) comes back as a low-relevance partial match — every
+   * such query collapses onto the same wrong point. Leave undefined to accept
+   * any result (legacy behavior); set it on callers that pass loosely-formed
+   * queries. Measured: a correct intersection scores 0.95–1.0, while partial
+   * matches score ~0.72 and bare borough centroids ~0.51.
+   */
+  minRelevance?: number;
 }
 
 // ─── Defaults (NYC) ───────────────────────────────────────────────────────────
@@ -78,6 +88,7 @@ export async function geocodeWithMapbox(
     limit = 1,
     skipVenueDbLookup = false,
     sanitizeAddress: shouldSanitize = true,
+    minRelevance,
   } = options;
 
   // Step 1: Check local DB for known venue override
@@ -122,6 +133,17 @@ export async function geocodeWithMapbox(
     const firstFeature = data?.features?.[0];
     if (!firstFeature) {
       return null;
+    }
+
+    if (minRelevance != null) {
+      const relevance = firstFeature.relevance as number | undefined;
+      if (relevance == null || relevance < minRelevance) {
+        console.warn(
+          `[Geocoder] Rejecting low-relevance match for "${venueName}": ` +
+            `${relevance ?? 'unknown'} < ${minRelevance} ("${firstFeature.place_name}")`
+        );
+        return null;
+      }
     }
 
     const [resolvedLng, resolvedLat] = firstFeature.geometry?.coordinates ??

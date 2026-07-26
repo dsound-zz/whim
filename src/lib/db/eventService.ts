@@ -334,8 +334,9 @@ export async function insertDraftEvent(payload: {
   submitterEmail: string;
   lat: number | null;
   lng: number | null;
+  venueId?: string | null;
 }) {
-  const { submitterEmail, ...eventData } = payload;
+  const { submitterEmail, venueId, ...eventData } = payload;
   const externalId = `submission_${crypto.randomUUID()}`;
 
   const [newEvent] = await db
@@ -344,6 +345,7 @@ export async function insertDraftEvent(payload: {
       externalId,
       sourceType: 'direct_submission',
       title: eventData.title,
+      venueId: venueId ?? null,
       venueName: eventData.venueName,
       address: eventData.address,
       startAt: eventData.startAt,
