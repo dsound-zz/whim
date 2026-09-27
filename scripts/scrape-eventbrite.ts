@@ -37,15 +37,9 @@ interface EventbriteVenue {
   address?: EventbriteAddress;
 }
 
-interface EventbriteImage {
-  url: string;
-  image_sizes?: {
-    large?: string;
-    medium?: string;
-    small?: string;
-  };
-  original?: { url: string };
-}
+import { getEventbriteScrapeImageUrl, type EventbriteScrapedImage } from '@/lib/eventbrite/scrapeImageUrl';
+
+type EventbriteImage = EventbriteScrapedImage;
 
 interface EventbriteTag {
   prefix: string;
@@ -53,7 +47,7 @@ interface EventbriteTag {
   display_name: string;
 }
 
-interface EventbriteEvent {
+export interface EventbriteEvent {
   id: string;
   eid?: string;
   eventbrite_event_id?: string;
@@ -171,9 +165,7 @@ function getEventId(event: EventbriteEvent): string {
 }
 
 function getImageUrl(event: EventbriteEvent): string | null {
-  const img = event.image;
-  if (!img) return null;
-  return img.image_sizes?.large ?? img.url ?? null;
+  return getEventbriteScrapeImageUrl(event.image);
 }
 
 function getVenueCoords(venue: EventbriteVenue): { lat: number; lng: number } | null {

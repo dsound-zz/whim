@@ -28,7 +28,9 @@ function extractDiceVenueCardsFromDom(): RawDiceCard[] {
     const externalId = href.split('/').pop() || href;
     const text = ((anchor as HTMLElement).innerText || '').trim();
     const imgEl = anchor.querySelector('img');
-    const imageUrl = imgEl ? imgEl.getAttribute('src') || imgEl.getAttribute('data-src') : null;
+    // data-src holds the real lazy-loaded image; src is a tiny placeholder
+    // ("/static/images/1px.png") until the card scrolls into view.
+    const imageUrl = imgEl ? imgEl.getAttribute('data-src') || imgEl.getAttribute('src') : null;
 
     const merged = byExternalId.get(externalId) ?? { title: '', ticketUrl: fullUrl, imageUrl: null };
     if (!merged.title && text) merged.title = text;
@@ -64,6 +66,7 @@ async function fetchDiceEventDetailViaBrowser(page: Page, ticketUrl: string): Pr
     endAt: null,
     description: null,
     priceMin: null,
+    imageUrl: null,
   };
 
   try {
@@ -120,6 +123,10 @@ async function fetchDiceEventDetailViaBrowser(page: Page, ticketUrl: string): Pr
           }
           if (typeof item.description === 'string') {
             detail.description = item.description.trim();
+          }
+          const imageValue = Array.isArray(item.image) ? item.image[0] : item.image;
+          if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+            detail.imageUrl = imageValue;
           }
 
           // Lowest offer price (Dice lists tiered offers, cheapest first is not guaranteed).

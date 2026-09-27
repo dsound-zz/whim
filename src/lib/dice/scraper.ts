@@ -43,6 +43,39 @@ export interface DiceEventDetail {
   endAt: Date | null;
   description: string | null;
   priceMin: number | null;
+  imageUrl: string | null;
+}
+
+/**
+ * Dice's browse/venue listing cards embed a 204x204 imgix thumbnail (w=204&h=204) sized
+ * for the small card grid, and lazy-load real cards behind a "/static/images/1px.png"
+ * stub in `src` until the image comes into view — a stub the DOM scrape sometimes reads
+ * before it's replaced. Neither is fit to display full-width in a 16:9 feed card.
+ */
+function isPlaceholderDiceImageUrl(url: string | null): boolean {
+  if (!url) return true;
+  if (!url.startsWith('http')) return true;
+  return /1px\.png$/i.test(url);
+}
+
+/** Re-requests a Dice imgix thumbnail at feed-card resolution instead of the tiny listing crop. */
+function upsizeDiceCardImageUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.endsWith('imgix.net')) return url;
+    parsed.searchParams.set('w', '1200');
+    parsed.searchParams.set('h', '1200');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** Prefers the full-res JSON-LD detail-page image; falls back to an upsized card thumbnail. */
+export function resolveDiceImageUrl(detailImageUrl: string | null, cardImageUrl: string | null): string | null {
+  if (!isPlaceholderDiceImageUrl(detailImageUrl)) return detailImageUrl;
+  if (!isPlaceholderDiceImageUrl(cardImageUrl)) return upsizeDiceCardImageUrl(cardImageUrl!);
+  return null;
 }
 
 export interface ProcessDiceEventOptions {
@@ -74,7 +107,9 @@ export function extractDiceEventCardsFromDom(): RawDiceCard[] {
     const fullUrl = href.startsWith('http') ? href : `https://dice.fm${href}`;
 
     const imgEl = el.querySelector('img');
-    const imageUrl = imgEl ? imgEl.getAttribute('src') : null;
+    // data-src holds the real lazy-loaded image; src is a tiny placeholder
+    // ("/static/images/1px.png") until the card scrolls into view.
+    const imageUrl = imgEl ? imgEl.getAttribute('data-src') || imgEl.getAttribute('src') : null;
 
     const titleEl =
       el.querySelector('h1, h2, h3, h4, h5, h6') ||
@@ -147,8 +182,8 @@ function parseDiceCardDate(dateStr: string): Date {
   return startAt;
 }
 
-/** Fetch a Dice event detail page over plain HTTP and extract JSON-LD coords/date/description. */
-async function fetchDiceEventDetailViaHttp(ticketUrl: string): Promise<DiceEventDetail> {
+/** Fetch a Dice event detail page over plain HTTP and extract JSON-LD coords/date/description/image. */
+export async function fetchDiceEventDetailViaHttp(ticketUrl: string): Promise<DiceEventDetail> {
   const detail: DiceEventDetail = {
     lat: null,
     lng: null,
@@ -156,6 +191,7 @@ async function fetchDiceEventDetailViaHttp(ticketUrl: string): Promise<DiceEvent
     endAt: null,
     description: null,
     priceMin: null,
+    imageUrl: null,
   };
 
   try {
@@ -179,6 +215,12 @@ async function fetchDiceEventDetailViaHttp(ticketUrl: string): Promise<DiceEvent
             }
             if (item.description && typeof item.description === 'string') {
               detail.description = item.description.trim();
+            }
+            // JSON-LD image is the full-res flyer (e.g. 1080x1080+), not the
+            // 204x204 crop the listing card's <img> requests.
+            const imageValue = Array.isArray(item.image) ? item.image[0] : item.image;
+            if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+              detail.imageUrl = imageValue;
             }
           }
         }
@@ -284,7 +326,7 @@ export async function processDiceRawEvent(
     description: detail?.description ?? null,
     category: category as any,
     ticketUrl: raw.ticketUrl,
-    imageUrl: raw.imageUrl,
+    imageUrl: resolveDiceImageUrl(detail?.imageUrl ?? null, raw.imageUrl),
     startAt,
     endAt: dateValidation.sanitizedEndAt ?? estimateEndTime(startAt, category),
     venueId,

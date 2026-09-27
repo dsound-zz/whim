@@ -40,7 +40,9 @@
     "seed:ical-sources": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/seed-ical-sources.ts",
     "backfill:eb-prices": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-eventbrite-prices.ts",
     "audit:quality": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/audit-data-quality.ts",
-    "backfill:descriptions": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-descriptions.ts"
+    "backfill:descriptions": "ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/backfill-descriptions.ts",
+    "backfill:dice-images": "tsx -r dotenv/config -r tsconfig-paths/register scripts/backfill-dice-images.ts",
+    "backfill:eb-scrape-images": "tsx -r dotenv/config -r tsconfig-paths/register scripts/backfill-eventbrite-scrape-images.ts"
   },
   "dependencies": {
     "@emnapi/core": "^1.10.0",
