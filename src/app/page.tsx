@@ -1,197 +1,150 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
+import { connection } from "next/server";
 import { fetchEventsNearLocation } from "@/lib/db/eventService";
 import { formatPrice } from "@/lib/utils/formatPrice";
-import { getCategoryConfig, getCategoryGradient } from "@/lib/utils/categoryConfig";
+import { formatClockTimeParts, formatWeekday } from "@/lib/utils/formatEventTime";
+import { CategoryBullet } from "@/components/ui/CategoryBullet";
+import type { FeedEvent } from "@/types";
 
 export const metadata = {
-  title: "Whim — What's happening near me tonight?",
-  description: "Discover spontaneous local events in New York City tonight. Music, comedy, art, food, and more — all in one feed.",
+  title: "Whim — what's on in New York tonight",
+  description: "Every event happening in New York tonight — concerts, comedy, markets, parties, park programs — from every source, on one board.",
 };
 
+const BOARD_ROW_COUNT = 7;
+
+const SOURCE_NAMES = [
+  "Ticketmaster",
+  "Dice",
+  "Eventbrite",
+  "Songkick",
+  "Resident Advisor",
+  "Meetup",
+  "NYC Parks",
+  "city permits",
+];
+
 export default async function HomePage() {
-  // Fetch a small batch of featured events for tonight
-  let featuredEvents: any[] = [];
+  // "Tonight" changes by the hour, so this page must render per request.
+  await connection();
+
+  let boardEvents: FeedEvent[] = [];
+  let tonightTotal = 0;
   try {
-    const { events } = await fetchEventsNearLocation({
+    const { events, total } = await fetchEventsNearLocation({
       minLat: 40.7128 - 0.15,
       maxLat: 40.7128 + 0.15,
       minLng: -74.006 - 0.15,
       maxLng: -74.006 + 0.15,
       timeframe: "tonight",
-      limit: 8,
+      limit: 40,
       offset: 0,
     });
-    // Prefer events with images
-    const withImages = events.filter((e) => e.imageUrl);
-    const withoutImages = events.filter((e) => !e.imageUrl);
-    featuredEvents = [...withImages, ...withoutImages].slice(0, 6);
-  } catch {
-    // Silently fall through — landing page works without events
+    boardEvents = [...events]
+      .sort((first, second) => new Date(first.startAt).getTime() - new Date(second.startAt).getTime())
+      .slice(0, BOARD_ROW_COUNT);
+    tonightTotal = total;
+  } catch (error) {
+    // The landing page still works without the live board.
+    console.error("Landing page board fetch failed:", error);
   }
 
+  const weekdayLabel = formatWeekday(new Date());
+
   return (
-    <div className="min-h-full bg-zinc-950 text-white">
-      {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <section className="relative flex flex-col items-center justify-center text-center px-6 pt-20 pb-16 overflow-hidden">
-        {/* Radial glow behind the heading */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(59,130,246,0.12) 0%, transparent 70%)",
-          }}
-        />
+    <div className="min-h-full bg-ink text-moon pb-[var(--bottom-nav-height)] lg:pb-0">
+      <div className="max-w-5xl mx-auto px-4 sm:px-8">
 
-        {/* City badge */}
-        <div className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs font-semibold px-3.5 py-1.5 rounded-full mb-6">
-          <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
-          New York City
-        </div>
-
-        {/* Heading */}
-        <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-none mb-5 max-w-3xl">
-          <span className="text-white">What&rsquo;s happening</span>
-          <br />
-          <span className="bg-gradient-to-r from-blue-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent">
-            near me tonight?
-          </span>
-        </h1>
-
-        {/* Subtitle */}
-        <p className="text-lg text-zinc-400 max-w-md mb-10 leading-relaxed">
-          Events from every source — music, comedy, art, food, and more — in
-          one spontaneous feed.
-        </p>
-
-        {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <Link
-            href="/feed"
-            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold px-7 py-3.5 rounded-full text-base transition-all shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:shadow-[0_0_40px_rgba(59,130,246,0.45)] hover:-translate-y-0.5"
-          >
-            Explore Tonight
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          </Link>
-        </div>
-
-
-        {/* Source chips */}
-        <div className="flex flex-wrap items-center justify-center gap-2 mt-10">
-          {[
-            { label: "Ticketmaster", color: "text-blue-400" },
-            { label: "Dice", color: "text-orange-400" },
-            { label: "Eventbrite", color: "text-red-400" },
-            { label: "Songkick", color: "text-pink-400" },
-            { label: "NYC Parks", color: "text-green-400" },
-            { label: "+ more", color: "text-zinc-500" },
-          ].map(({ label, color }) => (
-            <span
-              key={label}
-              className={`text-xs font-semibold ${color} bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-full`}
-            >
-              {label}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Tonight's events preview ───────────────────────────────────────── */}
-      {featuredEvents.length > 0 && (
-        <section className="px-6 pb-16 max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-xl font-bold text-white">
-              Tonight in New York
-            </h2>
+        <section className="pt-10 sm:pt-16 pb-10">
+          <p className="lg:hidden type-wordmark text-3xl mb-8">whim</p>
+          <p className="text-haze text-base sm:text-lg">{weekdayLabel} in New York</p>
+          <h1 className="type-headline text-[clamp(2.6rem,7.5vw,5.75rem)] leading-[1.02] mt-3 max-w-[14ch] text-balance">
+            Everything on tonight, on one board.
+          </h1>
+          <p className="text-haze text-base sm:text-lg leading-relaxed mt-5 max-w-[46ch]">
+            Shows, parties, markets, readings and park programs from every listing site in the city, sorted by when they start.
+          </p>
+          <div className="flex flex-wrap items-center gap-3 mt-8">
             <Link
               href="/feed"
-              className="text-sm font-semibold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+              className="bg-sodium hover:bg-sodium-deep text-ink font-bold px-6 py-3.5 rounded-md text-base transition-colors"
             >
-              See all
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-              </svg>
+              See tonight&rsquo;s board
+            </Link>
+            <Link
+              href="/submit"
+              className="text-moon font-semibold px-4 py-3.5 rounded-md border border-seam hover:bg-ink-raised transition-colors"
+            >
+              Add your event
             </Link>
           </div>
+        </section>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {featuredEvents.map((event) => {
-              const cat = getCategoryConfig(event.category);
-              const gradient = getCategoryGradient(event.category);
-              const timeStr = new Date(event.startAt).toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-              });
-              const price = formatPrice(event.isFree ?? false, event.priceMin, event.priceMax, event.ticketUrl);
+        {boardEvents.length > 0 && (
+          <section aria-labelledby="board-heading" className="pb-16">
+            <div className="flex items-baseline justify-between gap-4 border-b border-seam pb-3">
+              <h2 id="board-heading" className="type-headline text-xl">Starting next</h2>
+              <Link href="/feed" className="text-sm font-semibold text-haze hover:text-moon transition-colors">
+                All {tonightTotal} tonight
+              </Link>
+            </div>
 
-              return (
-                <Link
-                  key={event.id}
-                  href={`/feed/${event.id}`}
-                  className="flex flex-col rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-all hover:-translate-y-0.5 group"
-                >
-                  <div className="relative aspect-square overflow-hidden">
-                    {event.imageUrl ? (
-                      <img
-                        src={event.imageUrl}
-                        alt={event.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                    ) : (
-                      <div className={`w-full h-full bg-gradient-to-br ${gradient}`} />
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                    <div className="absolute bottom-2 left-2 text-[10px] font-bold text-white bg-black/50 backdrop-blur-sm px-1.5 py-0.5 rounded-full">
-                      {cat.emoji} {cat.label}
-                    </div>
-                  </div>
-                  <div className="p-3">
-                    <p className="text-xs text-zinc-500 mb-0.5">{timeStr}</p>
-                    <h3 className="text-xs font-bold text-white line-clamp-2 leading-snug">{event.title}</h3>
-                    <p className="text-[10px] text-zinc-500 mt-1 truncate">{event.venueName}</p>
-                    {price === "Free" && (
-                      <span className="text-[10px] font-bold text-emerald-400 mt-1 block">Free</span>
-                    )}
-                  </div>
-                </Link>
-              );
-            })}
+            <ol className="board-settle">
+              {boardEvents.map((event, rowIndex) => {
+                const { clock, meridiem } = formatClockTimeParts(event.startAt);
+                const priceTag = formatPrice(event.isFree ?? false, event.priceMin, event.priceMax, event.ticketUrl);
+                const isFreeEvent = !!event.isFree || priceTag === "Free";
+                const shouldShowPrice = !isFreeEvent && priceTag !== "—" && priceTag !== "View Tickets";
+
+                return (
+                  <li key={event.id} style={{ "--row-index": rowIndex } as CSSProperties} className="border-b border-seam">
+                    <Link
+                      href={`/feed/${event.id}`}
+                      className="group grid grid-cols-[4.25rem_1fr] sm:grid-cols-[6rem_1fr_11rem] items-baseline gap-x-4 py-4 hover:bg-ink-raised/60 transition-colors -mx-3 px-3 rounded-sm"
+                    >
+                      <span className="flex items-baseline gap-1">
+                        <span className="type-clock text-[2.1rem] sm:text-[2.6rem] text-sodium">{clock}</span>
+                        <span className="text-xs font-semibold text-haze">{meridiem}</span>
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-base sm:text-lg font-semibold leading-snug line-clamp-2 group-hover:underline decoration-seam underline-offset-4">
+                          {event.title}
+                        </span>
+                        <span className="block text-sm text-haze mt-0.5 truncate">{event.venueName}</span>
+                      </span>
+                      <span className="col-start-2 sm:col-start-3 flex items-center gap-3 text-xs font-semibold text-haze mt-1.5 sm:mt-0 sm:justify-end">
+                        <CategoryBullet category={event.category} />
+                        {isFreeEvent && <span className="text-mint">Free</span>}
+                        {shouldShowPrice && <span className="text-moon/80">{priceTag}</span>}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        )}
+
+        <section className="pb-20 grid gap-10 sm:grid-cols-2 border-t border-seam pt-10 sm:border-t-0 sm:pt-0">
+          <div>
+            <h2 className="type-headline text-xl mb-2">Where the listings come from</h2>
+            <p className="text-haze leading-relaxed max-w-[48ch]">
+              Whim reads {SOURCE_NAMES.slice(0, -1).join(", ")} and {SOURCE_NAMES[SOURCE_NAMES.length - 1]}, plus venue calendars.
+              When the same show is listed twice, you see it once, with every ticket price side by side.
+            </p>
+          </div>
+          <div>
+            <h2 className="type-headline text-xl mb-2">Run a venue?</h2>
+            <p className="text-haze leading-relaxed max-w-[48ch]">
+              Listing is free. Send us your event and it goes on the board once it&rsquo;s reviewed.
+            </p>
+            <Link href="/submit" className="inline-block mt-3 font-semibold text-sodium hover:text-moon transition-colors">
+              Add your event
+            </Link>
           </div>
         </section>
-      )}
-
-      {/* ── Value props ───────────────────────────────────────────────────── */}
-      <section className="px-6 pb-20 max-w-3xl mx-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[
-            {
-              emoji: "⚡",
-              title: "Spontaneous",
-              desc: "Built for tonight, not next month. Find something to do in the next few hours.",
-            },
-            {
-              emoji: "🗂",
-              title: "Everything",
-              desc: "One feed for Ticketmaster, Dice, Eventbrite, NYC Parks, and independent venues.",
-            },
-            {
-              emoji: "🆓",
-              title: "Free events",
-              desc: "Filter for free events to find gallery openings, park concerts, and community nights.",
-            },
-          ].map(({ emoji, title, desc }) => (
-            <div
-              key={title}
-              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5"
-            >
-              <div className="text-2xl mb-3">{emoji}</div>
-              <h3 className="text-sm font-bold text-white mb-1.5">{title}</h3>
-              <p className="text-xs text-zinc-500 leading-relaxed">{desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      </div>
     </div>
   );
 }

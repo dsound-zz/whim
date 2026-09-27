@@ -13,6 +13,29 @@ import type { FeedEvent } from "@/types";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
+// Pull Mapbox's dark basemap toward the app's ink palette so the map reads as
+// part of Whim rather than an embedded widget. Layer ids are from dark-v11.
+const MAP_INK_PAINT_OVERRIDES: Array<{ layerId: string; property: "background-color" | "fill-color"; value: string }> = [
+  { layerId: "land", property: "background-color", value: "#1b1842" },
+  { layerId: "water", property: "fill-color", value: "#0f0d29" },
+  { layerId: "landuse", property: "fill-color", value: "#201d4c" },
+  { layerId: "national-park", property: "fill-color", value: "#1f2446" },
+];
+
+const MARKER_STROKE_HEX = "#17143a";
+const SELECTION_HEX = "#ffb23e";
+
+function applyInkTintToMap(currentMap: mapboxgl.Map) {
+  for (const { layerId, property, value } of MAP_INK_PAINT_OVERRIDES) {
+    if (!currentMap.getLayer(layerId)) continue;
+    try {
+      currentMap.setPaintProperty(layerId, property, value);
+    } catch (paintError) {
+      console.warn(`Could not tint map layer "${layerId}":`, paintError);
+    }
+  }
+}
+
 type TimeFilter = "Tonight" | "Next 2 Days" | "This Week";
 type MobileViewMode = "list" | "map";
 
@@ -182,6 +205,7 @@ export default function FeedMapUI({ initialEvents, availableCategories }: { init
 
     currentMap.on("load", () => {
       isMapStyleLoaded.current = true;
+      applyInkTintToMap(currentMap);
 
       currentMap.addSource("events", {
         type: "geojson",
@@ -195,10 +219,10 @@ export default function FeedMapUI({ initialEvents, availableCategories }: { init
         source: "events",
         filter: ["==", ["get", "isSelected"], true],
         paint: {
-          "circle-color": "#3b82f6",
-          "circle-radius": 16,
-          "circle-opacity": 0.18,
-          "circle-blur": 0.6,
+          "circle-color": SELECTION_HEX,
+          "circle-radius": 18,
+          "circle-opacity": 0.28,
+          "circle-blur": 0.5,
         },
       });
 
@@ -215,7 +239,9 @@ export default function FeedMapUI({ initialEvents, availableCategories }: { init
           "circle-stroke-width": [
             "case", ["==", ["get", "isSelected"], true], 2.5, 1.5
           ],
-          "circle-stroke-color": "#0a0a0a",
+          "circle-stroke-color": [
+            "case", ["==", ["get", "isSelected"], true], SELECTION_HEX, MARKER_STROKE_HEX
+          ],
           "circle-opacity": [
             "case", ["==", ["get", "isSelected"], true], 1, 0.9
           ],
@@ -281,7 +307,7 @@ export default function FeedMapUI({ initialEvents, availableCategories }: { init
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex w-full h-full bg-zinc-950 overflow-hidden">
+    <div className="flex w-full h-full bg-ink overflow-hidden">
 
       {/* ── Left panel: Card list ── */}
       <div
@@ -289,7 +315,7 @@ export default function FeedMapUI({ initialEvents, availableCategories }: { init
           flex flex-col
           w-full lg:w-[420px] xl:w-[460px]
           lg:flex shrink-0
-          lg:border-r lg:border-zinc-900
+          lg:border-r lg:border-seam
           overflow-hidden
           ${mobileViewMode === "map" ? "hidden" : "flex"}
         `}
@@ -303,11 +329,12 @@ export default function FeedMapUI({ initialEvents, availableCategories }: { init
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           resultCount={events.length}
+          isLoading={isLoading}
           viewMode={mobileViewMode}
           onViewModeToggle={() => setMobileViewMode((v) => v === "list" ? "map" : "list")}
         />
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-[var(--bottom-nav-height)] lg:pb-0">
           <EventCardList
             events={events}
             isLoading={isLoading}
@@ -331,12 +358,12 @@ export default function FeedMapUI({ initialEvents, availableCategories }: { init
         <div className="absolute top-4 left-4 z-10 lg:hidden">
           <button
             onClick={() => setMobileViewMode("list")}
-            className="flex items-center gap-2 bg-zinc-950/90 backdrop-blur-md border border-zinc-800 text-white text-xs font-semibold px-3.5 py-2 rounded-full shadow-xl"
+            className="flex items-center gap-2 bg-ink/95 backdrop-blur-md border border-seam text-moon text-sm font-semibold px-3.5 py-2 rounded-md shadow-xl"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
             </svg>
-            List
+            Back to list
           </button>
         </div>
 

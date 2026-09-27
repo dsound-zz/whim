@@ -4,6 +4,7 @@
  * Canonical category → display color mapping used by both the consumer feed
  * map markers and any admin UI that renders category badges.
  * Import from here instead of defining inline Mapbox match expressions.
+ * Marker hexes mirror the bullet colors in categoryConfig.ts.
  */
 
 export interface CategoryMeta {
@@ -17,64 +18,64 @@ export interface CategoryMeta {
 
 export const CATEGORY_META: Record<string, CategoryMeta> = {
   music: {
-    markerHex: '#6366f1',
+    markerHex: '#8c9bff',
     textClass: 'text-indigo-400',
     bgClass: 'bg-indigo-500/20',
   },
   comedy: {
-    markerHex: '#f59e0b',
+    markerHex: '#f4e07a',
     textClass: 'text-amber-400',
     bgClass: 'bg-amber-500/20',
   },
   art: {
-    markerHex: '#f43f5e',
+    markerHex: '#ff85b0',
     textClass: 'text-rose-400',
     bgClass: 'bg-rose-500/20',
   },
   theater: {
-    markerHex: '#ef4444',
+    markerHex: '#ff7373',
     textClass: 'text-red-400',
     bgClass: 'bg-red-500/20',
   },
   food_drink: {
-    markerHex: '#10b981',
+    markerHex: '#7ee08c',
     textClass: 'text-emerald-400',
     bgClass: 'bg-emerald-500/20',
   },
   nightlife: {
-    markerHex: '#d946ef',
+    markerHex: '#cf8bff',
     textClass: 'text-fuchsia-400',
     bgClass: 'bg-fuchsia-500/20',
   },
   sports: {
-    markerHex: '#0ea5e9',
+    markerHex: '#6cc7ff',
     textClass: 'text-sky-400',
     bgClass: 'bg-sky-500/20',
   },
   community: {
-    markerHex: '#14b8a6',
+    markerHex: '#5fe0c9',
     textClass: 'text-teal-400',
     bgClass: 'bg-teal-500/20',
   },
   fitness: {
-    markerHex: '#84cc16',
+    markerHex: '#c4e86b',
     textClass: 'text-lime-400',
     bgClass: 'bg-lime-500/20',
   },
   family: {
-    markerHex: '#f97316',
+    markerHex: '#ffa585',
     textClass: 'text-orange-400',
     bgClass: 'bg-orange-500/20',
   },
   film: {
-    markerHex: '#06b6d4',
+    markerHex: '#c9d2e3',
     textClass: 'text-cyan-400',
     bgClass: 'bg-cyan-500/20',
   },
 };
 
 const DEFAULT_CATEGORY_META: CategoryMeta = {
-  markerHex: '#71717a',
+  markerHex: '#8e89b8',
   textClass: 'text-zinc-400',
   bgClass: 'bg-zinc-700/30',
 };

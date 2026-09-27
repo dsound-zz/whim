@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { type CSSProperties } from "react";
 import { CATEGORIES } from "@/lib/utils/categoryConfig";
 
 type CategoryFiltersProps = {
@@ -10,40 +10,48 @@ type CategoryFiltersProps = {
 };
 
 export function CategoryFilters({ activeCategory, onCategoryChange, availableCategories }: CategoryFiltersProps) {
-  const availableSet = new Set(availableCategories);
+  const availableCategorySet = new Set(availableCategories);
 
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-fade-right pb-1">
-      {/* "All" pill */}
+    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-fade-right pb-1 -mx-1 px-1" role="group" aria-label="Category">
       <button
         onClick={() => onCategoryChange(null)}
-        className={`flex items-center gap-1 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 ${
+        aria-pressed={activeCategory === null}
+        className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[13px] font-semibold transition-colors shrink-0 border ${
           activeCategory === null
-            ? "bg-white text-black shadow-md"
-            : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 border border-zinc-800"
+            ? "bg-moon text-ink border-moon"
+            : "text-haze border-seam hover:text-moon hover:border-haze"
         }`}
       >
-        ✨ All
+        Everything
       </button>
 
-      {CATEGORIES.filter((cat) => cat.id !== "other").map((cat) => {
-        const isActive = activeCategory === cat.id;
-        const hasEvents = availableSet.size === 0 || availableSet.has(cat.id);
+      {CATEGORIES.filter((category) => category.id !== "other").map((category) => {
+        const isActive = activeCategory === category.id;
+        const hasEvents = availableCategorySet.size === 0 || availableCategorySet.has(category.id);
+        // Active chips fill with the category's line color, like a subway bullet.
+        const chipStyle = {
+          "--bullet-color": isActive ? "var(--ink)" : category.hex,
+          ...(isActive ? { backgroundColor: category.hex, borderColor: category.hex } : {}),
+        } as CSSProperties;
+
         return (
           <button
-            key={cat.id}
-            onClick={() => hasEvents ? onCategoryChange(isActive ? null : cat.id) : undefined}
+            key={category.id}
+            onClick={() => hasEvents && onCategoryChange(isActive ? null : category.id)}
             disabled={!hasEvents}
-            className={`flex items-center gap-1 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 border ${
+            aria-pressed={isActive}
+            style={chipStyle}
+            className={`flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-full text-[13px] font-semibold transition-colors shrink-0 border ${
               isActive
-                ? "bg-white text-black border-transparent shadow-md"
+                ? "text-ink"
                 : hasEvents
-                  ? "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 border-zinc-800"
-                  : "bg-zinc-900/40 text-zinc-700 border-zinc-900 cursor-not-allowed opacity-40"
+                  ? "text-haze border-seam hover:text-moon hover:border-haze"
+                  : "text-dim border-seam/50 opacity-40 cursor-not-allowed"
             }`}
           >
-            <span>{cat.emoji}</span>
-            <span>{cat.label}</span>
+            <span className="line-bullet w-2! h-2!" aria-hidden="true" />
+            {category.label}
           </button>
         );
       })}
