@@ -61,6 +61,16 @@ const PUBLIC_EVENT_TYPES = [
 const DAYS_AHEAD = 60;
 const PAGE_SIZE = 1000;
 
+/**
+ * Only recurring, place-named permit types may create venue-registry rows.
+ * Ephemeral types (Block Party, Parade, Street Festival, plaza/open-street
+ * programming) use the event title as their "venue" name, so resolving them
+ * collapses unrelated locations into one canonical venue — 24 distinct block
+ * parties were pinned to a single Bed-Stuy intersection this way. Those types
+ * keep venueId null and rely on their own geocoded coordinates.
+ */
+const VENUE_CREATING_EVENT_TYPES = new Set(['Farmers Market']);
+
 // ─── Category mapping ─────────────────────────────────────────────────────────
 
 function mapEventTypeToCategory(eventType: string): WhimCategory {
@@ -101,13 +111,40 @@ function buildGeocodableAddress(location: string, borough: string): string {
     /^(.+?)\s+between\s+(.+?)\s+and\s+/i
   );
   if (betweenMatch) {
-    const mainStreet = toTitleCase(betweenMatch[1].trim());
-    const crossStreet = toTitleCase(betweenMatch[2].trim());
+    const mainStreet = addOrdinalSuffixes(toTitleCase(betweenMatch[1].trim()));
+    const crossStreet = addOrdinalSuffixes(toTitleCase(betweenMatch[2].trim()));
     return `${mainStreet} & ${crossStreet}, ${boroughSuffix}`;
   }
 
   // Fallback: use the whole location string + borough
-  return `${toTitleCase(firstSegment)}, ${boroughSuffix}`;
+  return `${addOrdinalSuffixes(toTitleCase(firstSegment))}, ${boroughSuffix}`;
+}
+
+/**
+ * NYC permit data writes numbered streets without an ordinal suffix
+ * ("122 PLACE", "4 AVENUE"). Mapbox fails to resolve those and falls back to a
+ * low-relevance partial match, so restore the suffix before geocoding.
+ * Measured: "122 Place & Sutter Avenue" scores 0.72 and resolves to the wrong
+ * borough; "122nd Place & Sutter Avenue" scores 1.0 and resolves exactly.
+ * Only applies to a number directly preceding a street-type word, so house
+ * numbers ("100 Gold Street") are left alone.
+ */
+function addOrdinalSuffixes(str: string): string {
+  return str.replace(
+    /\b(\d+)\s+(Street|Avenue|Place|Road|Drive|Court|Terrace|Lane)\b/gi,
+    (_match, num: string, streetType: string) => {
+      const n = parseInt(num, 10);
+      const lastTwo = n % 100;
+      const lastOne = n % 10;
+      let suffix = 'th';
+      if (lastTwo < 11 || lastTwo > 13) {
+        if (lastOne === 1) suffix = 'st';
+        else if (lastOne === 2) suffix = 'nd';
+        else if (lastOne === 3) suffix = 'rd';
+      }
+      return `${n}${suffix} ${streetType}`;
+    }
+  );
 }
 
 function toTitleCase(str: string): string {
@@ -140,11 +177,11 @@ function buildDescription(event: NycPermitEvent): string {
 async function main(): Promise<void> {
   const { db } = await import('../src/db');
   const { events } = await import('../src/db/schema');
-  const { eq, and } = await import('drizzle-orm');
+  const { eq, and, gt, lte, inArray } = await import('drizzle-orm');
   const { validateEventDates } = await import('../src/lib/utils/validateEventDates');
   const { normalizeEventTitle } = await import('../src/lib/utils/normalizeEventTitle');
   const { geocodeWithMapbox } = await import('../src/lib/utils/geocode');
-  const { isWithinNYC } = await import('../src/lib/ingestion/location-validation');
+  const { isValidLocation } = await import('../src/lib/ingestion/location-validation');
   const { updateIngestionSourceStatus } = await import('../src/lib/db/ingestionService');
   const { resolveVenueSafely } = await import('../src/lib/db/venueService');
   const { buildInitialTicketUrls } = await import('../src/lib/utils/deduplicateAtIngestion');
@@ -192,7 +229,12 @@ async function main(): Promise<void> {
   }
 
   // ─── Ingest ────────────────────────────────────────────────────────────────
-  const results = { inserted: 0, updated: 0, skipped: 0, errors: 0 };
+  const results = { inserted: 0, updated: 0, skipped: 0, errors: 0, expired: 0 };
+
+  // externalIds seen in this run, used below to retire permits the city has
+  // withdrawn. Without this, a cancelled permit stays 'active' forever because
+  // nothing ever revisits it.
+  const seenExternalIds = new Set<string>();
 
   for (const permit of allPermitEvents) {
     try {
@@ -215,7 +257,17 @@ async function main(): Promise<void> {
 
       // ─── Location & geocoding ───────────────────────────────────────────────
       const geocodeQuery = buildGeocodableAddress(permit.event_location, permit.event_borough);
-      const geocoded = await geocodeWithMapbox(permit.event_name, geocodeQuery);
+
+      // `skipVenueDbLookup` is essential here: the geocoder's first step is a
+      // name lookup against `venues`, and this source has no venue name to give
+      // it — only the event title. Passing a title like "Block Party" matched a
+      // registry row of the same name and returned that row's coordinates,
+      // silently discarding the query and pinning 24 block parties across three
+      // boroughs to one Bed-Stuy intersection.
+      const geocoded = await geocodeWithMapbox(permit.event_name, geocodeQuery, {
+        skipVenueDbLookup: true,
+        minRelevance: 0.8,
+      });
 
       let lat: number | null = null;
       let lng: number | null = null;
@@ -227,24 +279,41 @@ async function main(): Promise<void> {
         resolvedAddress = geocoded.placeName ?? geocodeQuery;
       }
 
-      if (lat !== null && lng !== null && !isWithinNYC(lat, lng)) {
-        results.skipped++;
-        continue;
+      // isValidLocation (not just isWithinNYC) also rejects the generic borough
+      // centroids Mapbox returns when it can't resolve an intersection. Keep the
+      // event with null coordinates rather than plotting it on a wrong point.
+      if (lat !== null && lng !== null && !isValidLocation(lat, lng)) {
+        console.warn(
+          `[NYCPermits] Discarding generic/invalid coords for "${permit.event_name}" (${geocodeQuery})`
+        );
+        lat = null;
+        lng = null;
+        resolvedAddress = geocodeQuery;
       }
 
       // ─── Category & metadata ────────────────────────────────────────────────
       const category = mapEventTypeToCategory(permit.event_type);
       const description = buildDescription(permit);
 
-      // Resolve to a canonical venue. For recurring permits (weekly greenmarkets,
-      // plaza events) this collapses every occurrence to one venue + shared coords.
-      const resolvedVenue = await resolveVenueSafely({
-        name: normalizedTitle,
-        address: resolvedAddress,
-        lat,
-        lng,
-        sourceType: 'nyc_permits',
-      });
+      // Resolve to a canonical venue only for market-type permits, where the
+      // permit name is a stable place name and weekly occurrences should share
+      // one venue + coords. Ephemeral types stay registry-free (see
+      // VENUE_CREATING_EVENT_TYPES).
+      const resolvedVenue = VENUE_CREATING_EVENT_TYPES.has(permit.event_type)
+        ? await resolveVenueSafely({
+            name: normalizedTitle,
+            address: resolvedAddress,
+            lat,
+            lng,
+            sourceType: 'nyc_permits',
+          })
+        : null;
+
+      // For ephemeral permits, label the "venue" with the street location
+      // rather than repeating the event title ("Block Party at Block Party").
+      const displayVenueName = VENUE_CREATING_EVENT_TYPES.has(permit.event_type)
+        ? normalizedTitle
+        : geocodeQuery.replace(/, NY$/, '');
 
       // Recurring permits share the same event_id — append the date (YYYY-MM-DD)
       // so each occurrence gets a distinct externalId.
@@ -259,7 +328,7 @@ async function main(): Promise<void> {
         startAt,
         endAt: dateValidation.sanitizedEndAt,
         venueId: resolvedVenue?.venueId ?? null,
-        venueName: normalizedTitle,
+        venueName: displayVenueName,
         address: resolvedAddress,
         lat: resolvedVenue?.lat ?? lat,
         lng: resolvedVenue?.lng ?? lng,
@@ -273,6 +342,8 @@ async function main(): Promise<void> {
         rawSource: { permit, geocodeQuery },
         status: 'active' as const,
       };
+
+      seenExternalIds.add(eventToInsert.externalId);
 
       const dedupCandidate = {
         externalId: eventToInsert.externalId,
@@ -311,6 +382,10 @@ async function main(): Promise<void> {
           .set({
             ...eventToInsert,
             ticketUrls: buildInitialTicketUrls(dedupCandidate),
+            // Without this the row keeps its original timestamp, so the
+            // stale-event audit can never tell a refreshed permit from an
+            // abandoned one.
+            updatedAt: new Date(),
           })
           .where(eq(events.id, existing[0].id));
         results.updated++;
@@ -327,11 +402,44 @@ async function main(): Promise<void> {
     }
   }
 
+  // ─── Retire withdrawn permits ──────────────────────────────────────────────
+  // Every permit starting inside the fetch window was returned above, so an
+  // active future event we did not just touch no longer exists upstream — the
+  // city cancelled or rescheduled it. Scoped to the window so events beyond the
+  // horizon (never fetched this run) are left alone.
+  if (seenExternalIds.size > 0) {
+    const windowEnd = new Date(now.getTime() + DAYS_AHEAD * 24 * 60 * 60 * 1000);
+
+    const staleRows = await db
+      .select({ id: events.id, externalId: events.externalId })
+      .from(events)
+      .where(
+        and(
+          eq(events.sourceType, 'nyc_permits'),
+          eq(events.status, 'active'),
+          gt(events.startAt, now),
+          lte(events.startAt, windowEnd)
+        )
+      );
+
+    const staleIds = staleRows
+      .filter((row) => !row.externalId || !seenExternalIds.has(row.externalId))
+      .map((row) => row.id);
+
+    if (staleIds.length > 0) {
+      await db
+        .update(events)
+        .set({ status: 'expired', updatedAt: new Date() })
+        .where(inArray(events.id, staleIds));
+      results.expired = staleIds.length;
+    }
+  }
+
   await updateIngestionSourceStatus('nyc_permits', 'active');
 
   console.log(
     `[NYCPermits] Sync complete: inserted=${results.inserted}, updated=${results.updated}, ` +
-      `skipped=${results.skipped}, errors=${results.errors}`
+      `skipped=${results.skipped}, expired=${results.expired}, errors=${results.errors}`
   );
 }
 

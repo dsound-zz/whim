@@ -42,9 +42,22 @@ export interface GroupedEvent {
   nextOccurrenceDates: Date[];
 }
 
+const TIME_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
+
 function areTimesClose(timeA: Date, timeB: Date): boolean {
   const diffMs = Math.abs(new Date(timeA).getTime() - new Date(timeB).getTime());
-  return diffMs <= 2 * 60 * 60 * 1000; // 2 hours
+  return diffMs <= TIME_WINDOW_MS;
+}
+
+/**
+ * Width of the time buckets used to index candidate groups in
+ * `deduplicateEvents`. Any value ≤ TIME_WINDOW_MS is correct; smaller buckets
+ * mean more buckets scanned but fewer groups compared in each.
+ */
+const BUCKET_MS = 60 * 60 * 1000; // 1 hour
+
+function bucketIndexFor(time: Date | string): number {
+  return Math.floor(new Date(time).getTime() / BUCKET_MS);
 }
 
 
@@ -73,27 +86,71 @@ export function deduplicateEvents<T extends {
   updatedAt: Date;
   distanceMiles?: number;
 }>(inputEvents: T[]): (T & { ticketSources: TicketSource[] })[] {
-  const grouped: (T & { ticketSources: TicketSource[] })[] = [];
+  type Group = T & { ticketSources: TicketSource[] };
+  /** `order` preserves the original insertion sequence so the bucketed scan
+   *  below picks the same group a linear `.find()` would have. */
+  interface GroupEntry {
+    order: number;
+    group: Group;
+  }
+
+  const grouped: Group[] = [];
+
+  // Groups indexed by the time bucket of their `startAt`. A group can only
+  // match an event when their start times are within TIME_WINDOW_MS, so only
+  // the buckets spanning that window need to be scanned — this is what keeps
+  // the pass near-linear instead of comparing every event to every group.
+  const bucketedGroups = new Map<number, GroupEntry[]>();
+  let insertionOrder = 0;
+
+  const indexGroup = (entry: GroupEntry): void => {
+    const bucket = bucketIndexFor(entry.group.startAt);
+    const existing = bucketedGroups.get(bucket);
+    if (existing) existing.push(entry);
+    else bucketedGroups.set(bucket, [entry]);
+  };
 
   for (const event of inputEvents) {
-    let matchedGroup = grouped.find((group) => {
-      const sameTime = areTimesClose(group.startAt, event.startAt);
-      const titleMatch =
-        normalizeForComparison(group.title) === normalizeForComparison(event.title) ||
-        normalizeForComparison(group.title).includes(normalizeForComparison(event.title)) ||
-        normalizeForComparison(event.title).includes(normalizeForComparison(group.title));
-      
-      const venueMatch = areVenuesSimilar(
-        group.venueName,
-        group.lat,
-        group.lng,
-        event.venueName,
-        event.lat,
-        event.lng
-      );
+    const eventTime = new Date(event.startAt).getTime();
+    const firstBucket = Math.floor((eventTime - TIME_WINDOW_MS) / BUCKET_MS);
+    const lastBucket = Math.floor((eventTime + TIME_WINDOW_MS) / BUCKET_MS);
+    const normalizedEventTitle = normalizeForComparison(event.title);
 
-      return sameTime && titleMatch && venueMatch;
-    });
+    let matchedEntry: GroupEntry | undefined;
+
+    for (let bucket = firstBucket; bucket <= lastBucket; bucket++) {
+      const entries = bucketedGroups.get(bucket);
+      if (!entries) continue;
+
+      for (const entry of entries) {
+        // Already holding an earlier-inserted match — this one can't win.
+        if (matchedEntry && entry.order > matchedEntry.order) continue;
+
+        const group = entry.group;
+        if (!areTimesClose(group.startAt, event.startAt)) continue;
+
+        const normalizedGroupTitle = normalizeForComparison(group.title);
+        const titleMatch =
+          normalizedGroupTitle === normalizedEventTitle ||
+          normalizedGroupTitle.includes(normalizedEventTitle) ||
+          normalizedEventTitle.includes(normalizedGroupTitle);
+        if (!titleMatch) continue;
+
+        const venueMatch = areVenuesSimilar(
+          group.venueName,
+          group.lat,
+          group.lng,
+          event.venueName,
+          event.lat,
+          event.lng
+        );
+        if (!venueMatch) continue;
+
+        matchedEntry = entry;
+      }
+    }
+
+    const matchedGroup = matchedEntry?.group;
 
     const currentSource: TicketSource = {
       platform: event.platform || "Unknown",
@@ -103,7 +160,7 @@ export function deduplicateEvents<T extends {
       isFree: event.isFree,
     };
 
-    if (matchedGroup) {
+    if (matchedGroup && matchedEntry) {
       // Add ticket source if not already present in matched group
       const exists = matchedGroup.ticketSources.some(
         (src) => src.platform.toLowerCase() === currentSource.platform.toLowerCase()
@@ -117,16 +174,32 @@ export function deduplicateEvents<T extends {
       const groupScore = matchedGroup.confidenceScore ?? 1.0;
       if (currentScore > groupScore) {
         // Update core info of group with higher confidence info
+        const previousBucket = bucketIndexFor(matchedGroup.startAt);
         const ticketSources = matchedGroup.ticketSources;
         Object.assign(matchedGroup, event);
         matchedGroup.ticketSources = ticketSources;
+
+        // Adopting the event's fields can move the group's startAt into a
+        // different bucket; leaving it filed under the old one would hide it
+        // from later events that should have matched it.
+        const nextBucket = bucketIndexFor(matchedGroup.startAt);
+        if (nextBucket !== previousBucket) {
+          const previousEntries = bucketedGroups.get(previousBucket);
+          if (previousEntries) {
+            const position = previousEntries.indexOf(matchedEntry);
+            if (position !== -1) previousEntries.splice(position, 1);
+          }
+          indexGroup(matchedEntry);
+        }
       }
     } else {
       // Create new group
-      grouped.push({
+      const group: Group = {
         ...event,
         ticketSources: [currentSource],
-      });
+      };
+      grouped.push(group);
+      indexGroup({ order: insertionOrder++, group });
     }
   }
 

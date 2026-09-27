@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { VenueSubmissionSchema } from '@/types/submission';
 import { geocodeWithMapbox } from '@/lib/utils/geocode';
 import { insertDraftEvent } from '@/lib/db/eventService';
+import { resolveVenueSafely } from '@/lib/db/venueService';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,12 +28,23 @@ export async function POST(request: NextRequest) {
     const lat = geocodeResult?.lat ?? null;
     const lng = geocodeResult?.lng ?? null;
 
+    // Resolve against the venue registry so submissions share canonical
+    // venue identity (and coords) with API/scraper-sourced events.
+    const resolvedVenue = await resolveVenueSafely({
+      name: payload.venueName,
+      address: payload.address,
+      lat,
+      lng,
+      sourceType: 'direct_submission',
+    });
+
     // Insert draft event
     const newEvent = await insertDraftEvent({
       ...payload,
       startAt: new Date(payload.startAt),
-      lat,
-      lng,
+      venueId: resolvedVenue?.venueId ?? null,
+      lat: resolvedVenue?.lat ?? lat,
+      lng: resolvedVenue?.lng ?? lng,
     });
 
     return NextResponse.json({

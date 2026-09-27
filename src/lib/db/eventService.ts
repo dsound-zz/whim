@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { events, eventVerificationLogs } from '@/db/schema';
-import { and, eq, gte, lte, count, sql, ilike, or, desc } from 'drizzle-orm';
+import { and, eq, gte, lte, sql, ilike, or, desc } from 'drizzle-orm';
 import type { FetchEventsParams, AdminEvent } from '@/types';
 import crypto from 'crypto';
 
@@ -178,6 +178,14 @@ import { deduplicateEvents, collapseRecurringShows } from '@/lib/utils/deduplica
 // ORDER BY similarity DESC to surface the best matches at the top.
 const TRGM_THRESHOLD = 0.1;
 
+/**
+ * Ceiling on rows pulled into memory for collapsing in `fetchEventsNearLocation`.
+ * A citywide, unfiltered query currently matches ~2k rows and collapses in about
+ * 120ms, so this leaves substantial headroom while bounding the work if the
+ * corpus grows or a caller passes a very wide bounding box.
+ */
+const MAX_COLLAPSE_INPUT_ROWS = 10000;
+
 
 /**
  * Returns the set of category slugs that have at least one active event
@@ -279,25 +287,26 @@ export async function fetchEventsNearLocation(params: FetchEventsParams) {
       )`
     : sql<number>`0`;
 
-  // Get total count for pagination metadata
-  const countResult = await db
-    .select({ total: count() })
-    .from(events)
-    .where(whereClause);
-  const total = countResult[0]?.total || 0;
-
-  // Fetch extra rows to compensate for records that get collapsed by both
-  // cross-platform dedup and recurring-show collapsing
-  const fetchLimit = params.limit * 3;
-
-  // Get paginated events — order by relevance desc, then by date
+  // Collapsing happens in application code (fuzzy title/venue matching that SQL
+  // can't express), so the matching set is collapsed in full before paginating.
+  // Slicing the raw rows first would make pages inconsistent: `offset` would
+  // advance over pre-collapse rows while each page returned post-collapse ones,
+  // so consumers stepping `offset` by `limit` saw events repeat or vanish. It
+  // would also report a `total` counting duplicates the caller never receives —
+  // currently a ~4x overstatement citywide.
   const data = await db
     .select()
     .from(events)
     .where(whereClause)
     .orderBy(hasSearch ? desc(relevanceScore) : events.startAt, events.startAt)
-    .limit(fetchLimit)
-    .offset(params.offset);
+    .limit(MAX_COLLAPSE_INPUT_ROWS);
+
+  if (data.length === MAX_COLLAPSE_INPUT_ROWS) {
+    console.warn(
+      `[fetchEventsNearLocation] Hit the ${MAX_COLLAPSE_INPUT_ROWS}-row collapse ceiling; ` +
+        `total may be understated. Narrow the query or move to a cursor-based scheme.`
+    );
+  }
 
   // Step 1: Collapse same-show duplicates across platforms (e.g. TM box-office
   // vs. resale IDs for the same event at the same time).
@@ -307,11 +316,9 @@ export async function fetchEventsNearLocation(params: FetchEventsParams) {
   // (e.g. 257 rows of "Cats" → 1 row with futureOccurrenceCount = 257).
   const collapsed = collapseRecurringShows(deduplicated);
 
-  const finalEvents = collapsed.slice(0, params.limit);
-
   return {
-    events: finalEvents,
-    total,
+    events: collapsed.slice(params.offset, params.offset + params.limit),
+    total: collapsed.length,
   };
 }
 
@@ -334,8 +341,9 @@ export async function insertDraftEvent(payload: {
   submitterEmail: string;
   lat: number | null;
   lng: number | null;
+  venueId?: string | null;
 }) {
-  const { submitterEmail, ...eventData } = payload;
+  const { submitterEmail, venueId, ...eventData } = payload;
   const externalId = `submission_${crypto.randomUUID()}`;
 
   const [newEvent] = await db
@@ -344,6 +352,7 @@ export async function insertDraftEvent(payload: {
       externalId,
       sourceType: 'direct_submission',
       title: eventData.title,
+      venueId: venueId ?? null,
       venueName: eventData.venueName,
       address: eventData.address,
       startAt: eventData.startAt,

@@ -1,90 +1,156 @@
 @import "tailwindcss";
 
+/*
+ * "Sodium & Ink" — Whim's identity is NYC after dark: an indigo night sky,
+ * sodium-vapor streetlight amber for anything about time, and subway-style
+ * colored bullets for categories. The app is intentionally dark-only.
+ */
 :root {
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --card: rgba(30, 41, 59, 0.7);
-  --card-border: rgba(255, 255, 255, 0.1);
-  --accent: #3b82f6;
-  --nav-height: 64px;
+  --ink: #17143a;
+  --ink-raised: #211d4a;
+  --ink-sunken: #110f2c;
+  --seam: #342f66;
+  --moon: #eeebfa;
+  --haze: #9c96c9;
+  --dim: #6c669c;
+  --sodium: #ffb23e;
+  --sodium-deep: #e8931a;
+  --mint: #8fe3b0;
+  --alarm: #ff8a8a;
+
+  --nav-height: 60px;
   --bottom-nav-height: 60px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-border: var(--card-border);
-  --color-accent: var(--accent);
-  --font-sans: var(--font-inter);
+  --color-ink: var(--ink);
+  --color-ink-raised: var(--ink-raised);
+  --color-ink-sunken: var(--ink-sunken);
+  --color-seam: var(--seam);
+  --color-moon: var(--moon);
+  --color-haze: var(--haze);
+  --color-dim: var(--dim);
+  --color-sodium: var(--sodium);
+  --color-sodium-deep: var(--sodium-deep);
+  --color-mint: var(--mint);
+  --color-alarm: var(--alarm);
+
+  /* Kept for admin screens that still reference the old tokens */
+  --color-background: var(--ink);
+  --color-foreground: var(--moon);
+  --color-accent: var(--sodium);
+
+  --font-sans: var(--font-instrument-sans);
+  --font-display: var(--font-anybody);
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  background: var(--ink);
+  color: var(--moon);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Glassmorphism utility */
-.glass {
-  background: var(--card);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--card-border);
+:focus-visible {
+  outline: 2px solid var(--sodium);
+  outline-offset: 2px;
 }
 
-/* Scrollbar hiding */
+/*
+ * Display type is set with explicit width + weight so each role reads
+ * differently: the start time is ultra-condensed (departure board),
+ * titles are semi-condensed, the wordmark runs wide.
+ */
+.type-clock {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 58;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 0.9;
+}
+
+.type-headline {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 78;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.type-wordmark {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 150;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+/* Subway-style category bullet */
+.line-bullet {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  background: var(--bullet-color, var(--dim));
+}
+
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Fade edge for horizontal scroll containers */
 .scroll-fade-right {
-  -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
-  mask-image: linear-gradient(to right, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  mask-image: linear-gradient(to right, black 88%, transparent 100%);
 }
 
-/* Card selection highlight ring */
-.card-selected {
-  box-shadow: 0 0 0 2px #3b82f6, 0 0 20px rgba(59, 130, 246, 0.25);
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Smooth card hover lift */
-.card-hover {
-  transition: transform 150ms ease, box-shadow 150ms ease;
-}
-.card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
-/* Bottom sheet slide-up animation */
 @keyframes slide-up {
-  from { transform: translateY(100%); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
 }
 .animate-slide-up {
   animation: slide-up 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
 }
 
-/* Fade in */
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(6px); }
+/*
+ * The one orchestrated moment: on the landing page the board's times
+ * light up in sequence, like a departure board settling.
+ */
+@keyframes board-settle {
+  from { opacity: 0; transform: translateY(-0.35em); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-in {
-  animation: fade-in 220ms ease forwards;
+.board-settle > * {
+  opacity: 0;
+  animation: board-settle 420ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation-delay: calc(var(--row-index, 0) * 70ms + 120ms);
 }
 
-/* Stagger children fade-in via CSS custom property */
-.stagger-children > * {
-  opacity: 0;
-  animation: fade-in 240ms ease forwards;
+@media (prefers-reduced-motion: reduce) {
+  .animate-slide-up,
+  .board-settle > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
-.stagger-children > *:nth-child(1)  { animation-delay: 40ms;  }
-.stagger-children > *:nth-child(2)  { animation-delay: 80ms;  }
-.stagger-children > *:nth-child(3)  { animation-delay: 120ms; }
-.stagger-children > *:nth-child(4)  { animation-delay: 160ms; }
-.stagger-children > *:nth-child(5)  { animation-delay: 200ms; }
-.stagger-children > *:nth-child(6)  { animation-delay: 240ms; }
-.stagger-children > *:nth-child(n+7) { animation-delay: 280ms; }
+
+/* Mapbox popups/controls picked up on the ink palette */
+.mapboxgl-ctrl-group {
+  background: var(--ink-raised) !important;
+  border: 1px solid var(--seam);
+}
+.mapboxgl-ctrl-group button + button {
+  border-top-color: var(--seam) !important;
+}
+.mapboxgl-ctrl-group .mapboxgl-ctrl-icon {
+  filter: invert(1);
+}

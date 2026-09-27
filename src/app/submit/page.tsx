@@ -1,29 +1,26 @@
 import { EventSubmissionForm } from './components/EventSubmissionForm';
 
 export const metadata = {
-  title: 'Submit an Event | Whim',
-  description: 'Submit your local event to be listed as a draft on Whim.',
+  title: 'Add an event | Whim',
+  description: 'List your New York event on Whim. Free for every venue and organizer.',
 };
 
 export default function SubmitEventPage() {
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-between py-12 px-4 sm:px-6 lg:px-8 font-sans antialiased text-slate-100">
-      <div className="max-w-2xl mx-auto w-full">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent sm:text-5xl">
-            Submit Your Event
-          </h1>
-          <p className="mt-3 text-slate-400 text-lg font-normal">
-            Are you a venue owner or event promoter? Fill out the details below to list your event on Whim.
-          </p>
+    <div className="min-h-full bg-ink text-moon pb-[calc(var(--bottom-nav-height)+2rem)] lg:pb-16">
+      <div className="max-w-2xl mx-auto w-full px-4 sm:px-8 pt-10 sm:pt-16">
+        <h1 className="type-headline text-[clamp(2.2rem,6vw,3.5rem)] leading-[1] text-balance">
+          Add your event to the board
+        </h1>
+        <p className="mt-4 text-haze text-base sm:text-lg leading-relaxed max-w-[52ch]">
+          For venues, promoters and organizers in New York. Listing is free. We review each
+          submission before it goes live, usually within a day.
+        </p>
+
+        <div className="mt-10">
+          <EventSubmissionForm />
         </div>
-
-        <EventSubmissionForm />
       </div>
-
-      <footer className="mt-16 text-center text-slate-600 text-sm font-light">
-        &copy; {new Date().getFullYear()} Whim Inc. All rights reserved.
-      </footer>
     </div>
   );
 }

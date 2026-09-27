@@ -41,6 +41,21 @@ const PROXIMITY_MATCH_METERS = 150;
 /** Minimum Jaccard overlap of name tokens to accept a proximity match. */
 const MIN_TOKEN_JACCARD = 0.5;
 
+/**
+ * Minimum Mapbox relevance accepted by resolveCoordinates' fallback geocode
+ * (the last resort used when a caller has no valid coordinates of its own).
+ * Below this, Mapbox is typically returning its best guess for an
+ * unresolvable name rather than a real match — e.g. "McKinley Park, Brooklyn"
+ * (rel 0.6) resolves to "Park Ave, Brooklyn, New York 11249", a street a
+ * kilometer away with no connection to the actual park. isValidLocation's
+ * GENERIC_CENTROIDS check doesn't catch this: it only rejects a fixed set of
+ * known borough centroids, not arbitrary low-confidence street matches. This
+ * threshold is shared with the nyc_permits geocoding fix, where the same
+ * Mapbox behavior was measured: correct matches score 0.88-1.0, unresolvable
+ * queries 0.5-0.72.
+ */
+const VENUE_FALLBACK_GEOCODE_MIN_RELEVANCE = 0.8;
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface ResolveVenueInput {
@@ -254,7 +269,9 @@ async function resolveCoordinates(
     return null;
   }
   const query = input.address ? `${input.name}, ${input.address}` : `${input.name}, New York, NY`;
-  const geo = await geocodeWithMapbox(input.name, query);
+  const geo = await geocodeWithMapbox(input.name, query, {
+    minRelevance: VENUE_FALLBACK_GEOCODE_MIN_RELEVANCE,
+  });
   if (geo && isValidLocation(geo.lat, geo.lng)) {
     return { lat: geo.lat, lng: geo.lng };
   }

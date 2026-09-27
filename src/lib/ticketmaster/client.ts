@@ -216,8 +216,13 @@ async function processTicketmasterPayload(tmEvents: any[]) {
         }).where(eq(events.id, existing[0].id));
         results.updated++;
       } else {
-        // Cross-platform dedup check before inserting
-        const dedupResult = await findCanonicalMatch(dedupCandidate);
+        // Cross-platform dedup check before inserting. allowSameSource is
+        // required here: Ticketmaster issues a distinct externalId for the
+        // primary box-office listing and the resale/marketplace listing of
+        // the same show (e.g. "Hamilton" and "Hamilton (NY)" at an identical
+        // startAt), so the (externalId, sourceType) unique index never sees
+        // them as duplicates — only this fuzzy match does.
+        const dedupResult = await findCanonicalMatch(dedupCandidate, { allowSameSource: true });
 
         if (dedupResult.isMatch && dedupResult.canonicalEventId) {
           // A canonical row already exists — merge this source into it

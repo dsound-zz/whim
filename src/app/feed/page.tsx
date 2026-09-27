@@ -41,7 +41,7 @@ export default async function FeedPage({
 
   return (
     <div className="h-full overflow-hidden">
-      <Suspense fallback={<div className="h-full bg-zinc-950" />}>
+      <Suspense fallback={<div className="h-full bg-ink" />}>
         <FeedMapUI initialEvents={initialEvents} availableCategories={availableCategories} />
       </Suspense>
     </div>

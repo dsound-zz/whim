@@ -134,6 +134,26 @@ export interface DedupResult {
   shouldUpdateCanonical: boolean;
 }
 
+export interface FindCanonicalMatchOptions {
+  /**
+   * Include candidates from the incoming event's own source in the search.
+   * Default false: same-source dedup is normally handled by the
+   * (externalId, sourceType) unique index, so a second pass here would be
+   * redundant. Set true for sources that can emit two distinct externalIds
+   * for one real-world event — Ticketmaster issues a separate id for the
+   * primary box-office listing and the resale/marketplace listing of the
+   * same show, so the unique index never sees them as duplicates.
+   */
+  allowSameSource?: boolean;
+  /**
+   * Exclude a specific event id from the candidate search. Required when
+   * calling this against a row that is already persisted (e.g. a backfill
+   * script re-checking an existing event with allowSameSource: true) —
+   * without it, the row can match itself.
+   */
+  excludeEventId?: string;
+}
+
 /**
  * Checks if a canonical event already exists for the incoming event.
  * Queries only within a ±30-minute window around startAt for efficiency.
@@ -144,13 +164,29 @@ export interface DedupResult {
  * - If !isMatch: proceed with normal insert (but initialize ticketUrls)
  */
 export async function findCanonicalMatch(
-  incoming: IncomingEventForDedup
+  incoming: IncomingEventForDedup,
+  options: FindCanonicalMatchOptions = {}
 ): Promise<DedupResult> {
+  const { allowSameSource = false, excludeEventId } = options;
   const windowStart = new Date(incoming.startAt.getTime() - THIRTY_MINUTES_MS);
   const windowEnd = new Date(incoming.startAt.getTime() + THIRTY_MINUTES_MS);
 
-  // Fetch events within the time window, excluding events from the same source
-  // (same-source dedup is already handled by the (externalId, sourceType) unique index)
+  const conditions = [
+    gte(events.startAt, windowStart),
+    lte(events.startAt, windowEnd),
+    eq(events.status, 'active'),
+  ];
+
+  // Fetch events within the time window. Normally excludes the incoming
+  // event's own source (same-source dedup is already handled by the
+  // (externalId, sourceType) unique index) unless the caller opts in.
+  if (!allowSameSource) {
+    conditions.push(ne(events.sourceType, incoming.sourceType as any));
+  }
+  if (excludeEventId) {
+    conditions.push(ne(events.id, excludeEventId));
+  }
+
   const candidates = await db
     .select({
       id: events.id,
@@ -167,15 +203,7 @@ export async function findCanonicalMatch(
       externalId: events.externalId,
     })
     .from(events)
-    .where(
-      and(
-        gte(events.startAt, windowStart),
-        lte(events.startAt, windowEnd),
-        eq(events.status, 'active'),
-        // Don't try to dedup against yourself
-        ne(events.sourceType, incoming.sourceType as any)
-      )
-    );
+    .where(and(...conditions));
 
   for (const candidate of candidates) {
     const timeMatch = areStartTimesClose(new Date(candidate.startAt), incoming.startAt);

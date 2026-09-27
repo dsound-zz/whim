@@ -4,6 +4,9 @@ import { eq, and, gt, asc, gte, lt } from "drizzle-orm";
 import { formatPrice } from "@/lib/utils/formatPrice";
 import { deduplicateEvents } from "@/lib/utils/deduplicateEvents";
 import Link from "next/link";
+import { CategoryBullet } from "@/components/ui/CategoryBullet";
+import { EventHeroImage } from "./components/EventHeroImage";
+import { formatClockTimeParts, formatLongDate, formatShortDate } from "@/lib/utils/formatEventTime";
 
 export default async function EventDetailPage({
   params,
@@ -18,9 +21,10 @@ export default async function EventDetailPage({
 
   if (!event) {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white px-4">
-        <h1 className="text-2xl font-bold mb-2">Event Not Found</h1>
-        <Link href="/feed" className="text-blue-500 hover:underline">Return to Feed</Link>
+      <div className="min-h-full bg-ink flex flex-col items-start justify-center text-moon px-6 py-24 max-w-md mx-auto">
+        <h1 className="type-headline text-3xl mb-2">This event is off the board</h1>
+        <p className="text-haze mb-6">It may have been cancelled, or the listing was removed by its source.</p>
+        <Link href="/feed" className="bg-sodium hover:bg-sodium-deep text-ink font-bold px-5 py-3 rounded-md transition-colors">See what&rsquo;s on tonight</Link>
       </div>
     );
   }
@@ -77,10 +81,11 @@ export default async function EventDetailPage({
     futureDates = futureDates.filter(e => e.id !== event.id).slice(0, 2);
   }
 
-  const dateObj = new Date(event.startAt);
-  const dateStr = dateObj.toLocaleDateString("en-US", { weekday: 'long', month: 'long', day: 'numeric' });
-  const timeStr = dateObj.toLocaleTimeString("en-US", { hour: 'numeric', minute: '2-digit' });
+  const { clock, meridiem } = formatClockTimeParts(event.startAt);
+  const longDateLabel = formatLongDate(event.startAt);
   const priceTag = formatPrice(event.isFree ?? false, event.priceMin ?? null, event.priceMax ?? null, event.ticketUrl ?? null);
+  const isFreeEvent = !!event.isFree || priceTag === "Free";
+  const hasTicketLink = primaryTicketUrl !== "#";
 
   // Fallback map directions link
   const directionsUrl = `https://maps.apple.com/?q=${encodeURIComponent(event.venueName + " " + (event.address || "New York"))}`;
@@ -94,166 +99,148 @@ export default async function EventDetailPage({
     .join("&");
   const backHref = feedParamsString ? `/feed?${feedParamsString}` : "/feed";
 
+  const descriptionText = event.description ? stripHtmlToPlainText(event.description) : "";
+
   return (
-    <div className="min-h-full bg-black text-white w-full max-w-md mx-auto relative flex flex-col">
-      {/* Scrollable content — pb clears the fixed action bar */}
-      <div className="flex-1 pb-28">
-        {/* Back Button */}
-        <div className="sticky top-0 z-30 px-4 pt-4 pb-2 pointer-events-none">
+    <div className="min-h-full bg-ink text-moon">
+      <div className="w-full max-w-2xl mx-auto pb-32">
+        <div className="px-4 sm:px-6 pt-4 pb-3">
           <Link
             href={backHref}
-            className="pointer-events-auto inline-flex bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/10"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-haze hover:text-moon transition-colors rounded-sm"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            Back to the board
           </Link>
         </div>
 
-        {/* Hero Image — blurred backdrop + sharp contained image (Spotify pattern).
-            Works at any source resolution — small avatars look intentional, not pixelated. */}
-        <div className="w-full aspect-video relative bg-zinc-900 border-b border-zinc-800 -mt-12 overflow-hidden">
-          {event.imageUrl ? (
-            <>
-              {/* Blurred backdrop fill */}
-              <img
-                src={event.imageUrl}
-                alt=""
-                aria-hidden="true"
-                className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-60 saturate-150"
-              />
-              {/* Dark scrim so text stays readable */}
-              <div className="absolute inset-0 bg-black/30" />
-              {/* Sharp foreground image — contained at natural aspect ratio */}
-              <img
-                src={event.imageUrl}
-                alt={event.title}
-                className="relative z-10 w-full h-full object-contain drop-shadow-2xl"
-              />
-            </>
-          ) : (
-            <div className="w-full h-full bg-gradient-to-br from-indigo-900 to-indigo-600 flex items-center justify-center">
-              <span className="text-4xl">🎟️</span>
+        {event.imageUrl && <EventHeroImage imageUrl={event.imageUrl} title={event.title} />}
+
+        <div className="px-4 sm:px-6 pt-6 flex flex-col gap-8">
+          <header>
+            <p className="flex items-baseline gap-2">
+              <span className="type-clock text-[4.5rem] sm:text-[5.5rem] text-sodium">{clock}</span>
+              <span className="type-headline text-2xl text-sodium">{meridiem}</span>
+            </p>
+            <p className="text-base text-haze mt-2">{longDateLabel}</p>
+            <h1 className="type-headline text-[2rem] sm:text-[2.5rem] leading-[1.05] mt-4 text-balance">{event.title}</h1>
+            <div className="flex items-center gap-4 mt-3 text-sm font-semibold text-haze">
+              <CategoryBullet category={event.category} />
+              {isFreeEvent && <span className="text-mint">Free</span>}
             </div>
-          )}
-        </div>
+          </header>
 
-        <div className="p-6 flex flex-col gap-6">
-          <div>
-            <h1 className="text-3xl font-black leading-tight mb-2">{event.title}</h1>
-            <p className="text-zinc-400 text-lg font-medium">{dateStr} · {timeStr}</p>
-          </div>
-
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center gap-3">
+          <section aria-labelledby="venue-heading" className="border-y border-seam py-4 flex justify-between items-center gap-4">
             <div className="min-w-0">
-              <h3 className="font-bold text-lg text-white">{event.venueName}</h3>
-              {event.address && <p className="text-zinc-400 text-sm mt-1 truncate">{event.address}</p>}
+              <h2 id="venue-heading" className="font-semibold text-lg text-moon">{event.venueName}</h2>
+              {event.address && <p className="text-haze text-sm mt-0.5">{event.address}</p>}
             </div>
             <a
               href={directionsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white text-xs font-semibold px-3 py-2 rounded-full transition-colors shrink-0 border border-zinc-700"
+              className="shrink-0 text-sm font-semibold text-moon border border-seam hover:bg-ink-raised px-3.5 py-2 rounded-md transition-colors"
             >
-              <svg className="w-3.5 h-3.5 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-              </svg>
               Directions
             </a>
-          </div>
+          </section>
 
           {futureDates.length > 0 && (
-            <div>
-              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3">Also Playing</h3>
+            <section aria-labelledby="more-dates-heading">
+              <h2 id="more-dates-heading" className="type-headline text-lg mb-3">More dates</h2>
               <div className="flex flex-wrap gap-2">
-                {futureDates.map(fd => (
-                  <Link key={fd.id} href={`/feed/${fd.id}`} className="bg-zinc-900 border border-zinc-800 hover:border-zinc-600 px-3 py-1.5 rounded-full text-sm font-medium transition-colors">
-                    {new Date(fd.startAt).toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric' })}
+                {futureDates.map((futureDate) => (
+                  <Link
+                    key={futureDate.id}
+                    href={`/feed/${futureDate.id}`}
+                    className="border border-seam hover:border-haze px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+                  >
+                    {formatShortDate(futureDate.startAt)}
                   </Link>
                 ))}
               </div>
-            </div>
+            </section>
           )}
 
           {ticketSources.length > 1 && (
-            <div>
-              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3">Compare Tickets</h3>
-              <div className="flex flex-col gap-2">
-                {ticketSources.map((source, idx) => (
-                  <a
-                    key={idx}
-                    href={source.ticketUrl || "#"}
-                    target={source.ticketUrl ? "_blank" : "_self"}
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between bg-zinc-900 border border-zinc-800 hover:border-zinc-700 p-4 rounded-xl transition-colors"
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-bold text-sm text-white">{source.platform}</span>
-                      <span className="text-xs text-zinc-400">
+            <section aria-labelledby="compare-heading">
+              <h2 id="compare-heading" className="type-headline text-lg mb-1">Compare tickets</h2>
+              <p className="text-sm text-haze mb-3">This event is listed on {ticketSources.length} sites.</p>
+              <ul className="border-t border-seam">
+                {ticketSources.map((source, sourceIndex) => (
+                  <li key={sourceIndex} className="border-b border-seam">
+                    <a
+                      href={source.ticketUrl || "#"}
+                      target={source.ticketUrl ? "_blank" : "_self"}
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between gap-4 py-3.5 hover:bg-ink-raised/60 transition-colors -mx-2 px-2 rounded-sm"
+                    >
+                      <span className="font-semibold text-moon capitalize">{source.platform}</span>
+                      <span className="text-sm text-haze">
                         {formatPrice(source.isFree ?? false, source.priceMin, source.priceMax, source.ticketUrl)}
                       </span>
-                    </div>
-                    <span className="text-xs text-blue-500 font-semibold flex items-center gap-1">
-                      Select <span>→</span>
-                    </span>
-                  </a>
+                    </a>
+                  </li>
                 ))}
-              </div>
-            </div>
+              </ul>
+            </section>
           )}
 
-          {event.description && (() => {
-            const rawHtml = event.description as string;
-            const noTags = rawHtml
-              .replace(/<br\s*\/?>/gi, '\n')
-              .replace(/<\/p>/gi, '\n')
-              .replace(/<[^>]+>/g, '')
-              .replace(/&nbsp;/gi, ' ')
-              .replace(/&amp;/gi, '&')
-              .replace(/&lt;/gi, '<')
-              .replace(/&gt;/gi, '>')
-              .replace(/&quot;/gi, '"')
-              .replace(/&#39;/gi, "'")
-              .replace(/&apos;/gi, "'")
-              .replace(/&rsquo;/gi, '\u2019')
-              .replace(/&lsquo;/gi, '\u2018')
-              .replace(/&rdquo;/gi, '\u201D')
-              .replace(/&ldquo;/gi, '\u201C')
-              .replace(/&mdash;/gi, '\u2014')
-              .replace(/&ndash;/gi, '\u2013')
-              .replace(/&hellip;/gi, '\u2026')
-              .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-              .replace(/\n{3,}/g, '\n\n')
-              .trim();
-            return (
-              <div>
-                <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-2">About</h3>
-                <div className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">
-                  {noTags}
-                </div>
+          {descriptionText && (
+            <section aria-labelledby="about-heading">
+              <h2 id="about-heading" className="type-headline text-lg mb-2">About this event</h2>
+              <div className="text-moon/85 text-[15px] leading-relaxed whitespace-pre-wrap max-w-[65ch]">
+                {descriptionText}
               </div>
-            );
-          })()}
+            </section>
+          )}
         </div>
       </div>
 
-      {/* Fixed Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-black via-black/95 to-transparent">
-        <div className="max-w-md mx-auto px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <div className="flex items-center gap-4">
-            <div className="flex flex-col">
-              <span className="text-xs text-zinc-400 font-medium uppercase tracking-wider">Price</span>
-              <span className="text-xl font-bold">{priceTag}</span>
-            </div>
+      <div className="fixed bottom-0 inset-x-0 z-40 bg-ink/95 backdrop-blur-md border-t border-seam">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex items-center gap-4">
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs text-haze">Price</span>
+            <span className={`text-lg font-bold ${isFreeEvent ? "text-mint" : "text-moon"}`}>
+              {priceTag === "—" || priceTag === "View Tickets" ? "See site" : priceTag}
+            </span>
+          </div>
+          {hasTicketLink && (
             <a
               href={primaryTicketUrl}
-              target={primaryTicketUrl !== "#" ? "_blank" : "_self"}
+              target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 bg-white hover:bg-zinc-200 text-black font-bold py-4 rounded-xl text-center text-lg transition-colors"
+              className="flex-1 bg-sodium hover:bg-sodium-deep text-ink font-bold py-3.5 rounded-md text-center text-base transition-colors"
             >
-              {primaryTicketUrl !== "#" ? "Get Tickets" : "More Info"}
+              {isFreeEvent ? "Open event page" : "Get tickets"}
             </a>
-          </div>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+function stripHtmlToPlainText(rawHtml: string): string {
+  return rawHtml
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&rsquo;/gi, '\u2019')
+    .replace(/&lsquo;/gi, '\u2018')
+    .replace(/&rdquo;/gi, '\u201D')
+    .replace(/&ldquo;/gi, '\u201C')
+    .replace(/&mdash;/gi, '\u2014')
+    .replace(/&ndash;/gi, '\u2013')
+    .replace(/&hellip;/gi, '\u2026')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

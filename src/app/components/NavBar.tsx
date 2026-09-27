@@ -4,58 +4,63 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const NAV_LINKS = [
+type NavLinkConfig = {
+  href: string;
+  label: string;
+  renderIcon: (isActive: boolean) => React.ReactNode;
+};
+
+const NAV_LINKS: NavLinkConfig[] = [
   {
     href: "/feed",
-    label: "Explore",
-    icon: (active: boolean) => (
-      <svg className={`w-5 h-5 ${active ? "text-white" : "text-zinc-500"}`} fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={active ? 0 : 1.75} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 13l4.553 2.276A1 1 0 0021 21.382V10.618a1 1 0 00-.553-.894L15 7m0 13V7m0 0L9 7" />
+    label: "Tonight",
+    renderIcon: (isActive) => (
+      <svg className="w-5 h-5" viewBox="0 0 24 24" fill={isActive ? "currentColor" : "none"} stroke="currentColor" strokeWidth={1.75} aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" />
+      </svg>
+    ),
+  },
+  {
+    href: "/submit",
+    label: "Add an event",
+    renderIcon: () => (
+      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden="true">
+        <path strokeLinecap="round" d="M12 5v14M5 12h14" />
       </svg>
     ),
   },
 ];
 
+function isLinkActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export function NavBar() {
   const pathname = usePathname();
-  const isOnFeed = pathname === "/feed" || pathname.startsWith("/feed/");
+  // The event detail page has its own fixed ticket bar at the bottom of the screen.
+  const shouldShowMobileTabBar = !/^\/feed\/[^/]+$/.test(pathname);
 
   return (
     <>
-      {/* ── Desktop top nav ─────────────────────────────────────────────────── */}
-      <nav
-        className={`hidden lg:flex items-center justify-between px-6 h-[var(--nav-height)] shrink-0 z-50 border-b transition-colors ${
-          isOnFeed
-            ? "bg-zinc-950 border-zinc-900"
-            : "bg-zinc-950 border-zinc-900"
-        }`}
-      >
-        {/* Wordmark */}
-        <Link href="/feed" className="flex items-center gap-2 group">
-          <span className="text-xl font-black text-white tracking-tight group-hover:opacity-80 transition-opacity">
-            whim
-          </span>
-          <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-widest mt-0.5">
-            New York
-          </span>
+      <nav className="hidden lg:flex items-center justify-between px-6 h-[var(--nav-height)] shrink-0 z-50 border-b border-seam bg-ink">
+        <Link href="/" className="flex items-baseline gap-3 rounded-sm">
+          <span className="type-wordmark text-[1.65rem] text-moon">whim</span>
+          <span className="text-sm text-haze">New York</span>
         </Link>
 
-        {/* Nav links */}
         <div className="flex items-center gap-1">
-          {NAV_LINKS.map(({ href, label, icon }) => {
-            const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+          {NAV_LINKS.map(({ href, label, renderIcon }) => {
+            const isActive = isLinkActive(pathname, href);
             return (
               <Link
                 key={href}
                 href={href}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
-                  isActive
-                    ? "bg-white/10 text-white"
-                    : "text-zinc-500 hover:text-white hover:bg-white/5"
+                aria-current={isActive ? "page" : undefined}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-sm font-semibold transition-colors ${
+                  isActive ? "text-sodium" : "text-haze hover:text-moon"
                 }`}
               >
-                {icon(isActive)}
+                {renderIcon(isActive)}
                 {label}
               </Link>
             );
@@ -63,24 +68,26 @@ export function NavBar() {
         </div>
       </nav>
 
-      {/* ── Mobile bottom tab bar ────────────────────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-50 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-900 h-[var(--bottom-nav-height)] flex items-center justify-around px-4 safe-area-pb">
-        {NAV_LINKS.map(({ href, label, icon }) => {
-          const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`flex flex-col items-center gap-1 flex-1 py-2 transition-colors ${
-                isActive ? "text-white" : "text-zinc-600 hover:text-zinc-400"
-              }`}
-            >
-              {icon(isActive)}
-              <span className="text-[10px] font-semibold tracking-wide uppercase">{label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      {shouldShowMobileTabBar && (
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-50 bg-ink-sunken/95 backdrop-blur-md border-t border-seam flex items-stretch safe-area-pb">
+          {NAV_LINKS.map(({ href, label, renderIcon }) => {
+            const isActive = isLinkActive(pathname, href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-current={isActive ? "page" : undefined}
+                className={`flex flex-col items-center justify-center gap-1 flex-1 h-[var(--bottom-nav-height)] transition-colors ${
+                  isActive ? "text-sodium" : "text-dim hover:text-haze"
+                }`}
+              >
+                {renderIcon(isActive)}
+                <span className="text-[11px] font-semibold">{label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </>
   );
 }

@@ -70,7 +70,7 @@ export function EventSubmissionForm() {
         if (response.status === 400 && data.details) {
           setErrors(data.details);
         } else {
-          setErrors({ global: data.error || 'Something went wrong. Please try again.' });
+          setErrors({ global: data.error || 'Whim couldn’t save this event. Wait a minute, then send it again.' });
         }
       } else {
         setIsSuccess(true);
@@ -85,7 +85,7 @@ export function EventSubmissionForm() {
       }
     } catch (error) {
       console.error('Submission error:', error);
-      setErrors({ global: 'Network error. Please verify your connection and try again.' });
+      setErrors({ global: 'Couldn’t reach Whim. Check your connection and send again.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -93,30 +93,25 @@ export function EventSubmissionForm() {
 
   if (isSuccess) {
     return (
-      <div className="glass rounded-2xl p-8 text-center border border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.1)] transition-all duration-500 scale-100 animate-in fade-in zoom-in-95">
-        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-400 mb-6 animate-bounce">
-          <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <h2 className="text-2xl font-bold text-white mb-2 font-sans">Submission Received!</h2>
-        <p className="text-slate-300 mb-6 max-w-md mx-auto text-base font-normal">
-          Thank you for submitting your event. It has been successfully registered as a draft and will be reviewed by our team shortly.
+      <div className="border-t-[3px] border-mint pt-6" role="status">
+        <h2 className="type-headline text-2xl text-moon mb-2">Event received</h2>
+        <p className="text-haze mb-6 max-w-[48ch] leading-relaxed">
+          We&rsquo;ll review it and put it on the board, usually within a day. We&rsquo;ll email you if anything needs fixing.
         </p>
         <button
           onClick={() => setIsSuccess(false)}
-          className="inline-flex justify-center py-2.5 px-6 border border-transparent rounded-xl text-sm font-semibold text-white bg-accent hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent transition-all duration-300 shadow-[0_4px_20px_rgba(59,130,246,0.25)] hover:shadow-[0_4px_25px_rgba(59,130,246,0.35)]"
+          className="py-2.5 px-5 border border-seam rounded-md text-sm font-semibold text-moon hover:bg-ink-raised transition-colors"
         >
-          Submit Another Event
+          Add another event
         </button>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="glass rounded-2xl p-8 border border-slate-800 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] transition-all duration-300 flex flex-col space-y-6">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-8 border-t border-seam pt-8">
       {errors.global && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-sm font-medium animate-in fade-in">
+        <div className="border-l-[3px] border-alarm bg-ink-raised text-moon px-4 py-3 rounded-sm text-sm" role="alert">
           {errors.global}
         </div>
       )}
@@ -124,8 +119,8 @@ export function EventSubmissionForm() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         {/* Title */}
         <div className="sm:col-span-2">
-          <label htmlFor="title" className="block text-sm font-semibold text-slate-300 mb-1.5">
-            Event Title
+          <label htmlFor="title" className="block text-sm font-semibold text-moon mb-1.5">
+            Event name
           </label>
           <input
             type="text"
@@ -134,18 +129,18 @@ export function EventSubmissionForm() {
             required
             value={formData.title}
             onChange={handleChange}
-            placeholder="e.g. Summer Jazz Festival"
-            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-all duration-300 font-sans"
+            placeholder="Late set with the Rotary Trio"
+            className="w-full bg-ink-sunken border border-seam rounded-md px-3.5 py-2.5 text-moon placeholder:text-dim focus:outline-none focus:border-sodium transition-colors [color-scheme:dark]"
           />
           {errors.title && (
-            <p className="mt-1.5 text-xs font-semibold text-red-400">{errors.title[0]}</p>
+            <p className="mt-1.5 text-sm text-alarm">{errors.title[0]}</p>
           )}
         </div>
 
-        {/* Venue Name */}
+        {/* Venue */}
         <div>
-          <label htmlFor="venueName" className="block text-sm font-semibold text-slate-300 mb-1.5">
-            Venue Name
+          <label htmlFor="venueName" className="block text-sm font-semibold text-moon mb-1.5">
+            Venue
           </label>
           <input
             type="text"
@@ -154,17 +149,17 @@ export function EventSubmissionForm() {
             required
             value={formData.venueName}
             onChange={handleChange}
-            placeholder="e.g. Blue Note Jazz Club"
-            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-all duration-300 font-sans"
+            placeholder="Blue Note"
+            className="w-full bg-ink-sunken border border-seam rounded-md px-3.5 py-2.5 text-moon placeholder:text-dim focus:outline-none focus:border-sodium transition-colors [color-scheme:dark]"
           />
           {errors.venueName && (
-            <p className="mt-1.5 text-xs font-semibold text-red-400">{errors.venueName[0]}</p>
+            <p className="mt-1.5 text-sm text-alarm">{errors.venueName[0]}</p>
           )}
         </div>
 
         {/* Address */}
         <div>
-          <label htmlFor="address" className="block text-sm font-semibold text-slate-300 mb-1.5">
+          <label htmlFor="address" className="block text-sm font-semibold text-moon mb-1.5">
             Address
           </label>
           <input
@@ -174,18 +169,18 @@ export function EventSubmissionForm() {
             required
             value={formData.address}
             onChange={handleChange}
-            placeholder="e.g. 131 W 3rd St, New York, NY"
-            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-all duration-300 font-sans"
+            placeholder="131 W 3rd St, New York, NY"
+            className="w-full bg-ink-sunken border border-seam rounded-md px-3.5 py-2.5 text-moon placeholder:text-dim focus:outline-none focus:border-sodium transition-colors [color-scheme:dark]"
           />
           {errors.address && (
-            <p className="mt-1.5 text-xs font-semibold text-red-400">{errors.address[0]}</p>
+            <p className="mt-1.5 text-sm text-alarm">{errors.address[0]}</p>
           )}
         </div>
 
         {/* Start At */}
         <div>
-          <label htmlFor="startAt" className="block text-sm font-semibold text-slate-300 mb-1.5">
-            Start Date & Time
+          <label htmlFor="startAt" className="block text-sm font-semibold text-moon mb-1.5">
+            Starts
           </label>
           <input
             type="datetime-local"
@@ -194,17 +189,17 @@ export function EventSubmissionForm() {
             required
             value={formData.startAt}
             onChange={handleChange}
-            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-all duration-300 font-sans"
+            className="w-full bg-ink-sunken border border-seam rounded-md px-3.5 py-2.5 text-moon placeholder:text-dim focus:outline-none focus:border-sodium transition-colors [color-scheme:dark]"
           />
           {errors.startAt && (
-            <p className="mt-1.5 text-xs font-semibold text-red-400">{errors.startAt[0]}</p>
+            <p className="mt-1.5 text-sm text-alarm">{errors.startAt[0]}</p>
           )}
         </div>
 
-        {/* Ticket URL */}
+        {/* Ticket or event link */}
         <div>
-          <label htmlFor="ticketUrl" className="block text-sm font-semibold text-slate-300 mb-1.5">
-            Ticket URL
+          <label htmlFor="ticketUrl" className="block text-sm font-semibold text-moon mb-1.5">
+            Ticket or event link
           </label>
           <input
             type="url"
@@ -213,18 +208,18 @@ export function EventSubmissionForm() {
             required
             value={formData.ticketUrl}
             onChange={handleChange}
-            placeholder="e.g. https://ticketlink.com/event"
-            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-all duration-300 font-sans"
+            placeholder="https://"
+            className="w-full bg-ink-sunken border border-seam rounded-md px-3.5 py-2.5 text-moon placeholder:text-dim focus:outline-none focus:border-sodium transition-colors [color-scheme:dark]"
           />
           {errors.ticketUrl && (
-            <p className="mt-1.5 text-xs font-semibold text-red-400">{errors.ticketUrl[0]}</p>
+            <p className="mt-1.5 text-sm text-alarm">{errors.ticketUrl[0]}</p>
           )}
         </div>
 
         {/* Submitter Email */}
         <div className="sm:col-span-2">
-          <label htmlFor="submitterEmail" className="block text-sm font-semibold text-slate-300 mb-1.5">
-            Your Email Address
+          <label htmlFor="submitterEmail" className="block text-sm font-semibold text-moon mb-1.5">
+            Your email
           </label>
           <input
             type="email"
@@ -233,11 +228,11 @@ export function EventSubmissionForm() {
             required
             value={formData.submitterEmail}
             onChange={handleChange}
-            placeholder="e.g. contact@venue.com"
-            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-all duration-300 font-sans"
+            placeholder="you@venue.com"
+            className="w-full bg-ink-sunken border border-seam rounded-md px-3.5 py-2.5 text-moon placeholder:text-dim focus:outline-none focus:border-sodium transition-colors [color-scheme:dark]"
           />
           {errors.submitterEmail && (
-            <p className="mt-1.5 text-xs font-semibold text-red-400">{errors.submitterEmail[0]}</p>
+            <p className="mt-1.5 text-sm text-alarm">{errors.submitterEmail[0]}</p>
           )}
         </div>
       </div>
@@ -245,18 +240,18 @@ export function EventSubmissionForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full inline-flex justify-center items-center py-3 px-6 border border-transparent rounded-xl text-base font-semibold text-white bg-accent hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_4px_20px_rgba(59,130,246,0.25)] hover:shadow-[0_4px_25px_rgba(59,130,246,0.35)]"
+        className="w-full sm:w-auto sm:self-start inline-flex justify-center items-center py-3.5 px-8 rounded-md text-base font-bold text-ink bg-sodium hover:bg-sodium-deep transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isSubmitting ? (
           <>
-            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-ink" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            Submitting event...
+            Sending…
           </>
         ) : (
-          'Submit Event'
+          'Send for review'
         )}
       </button>
     </form>
