@@ -1,7 +1,14 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+import { isDemoModeEnabled } from '../src/lib/utils/demoMode';
+
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[Dice Runner] DEMO_MODE active — skipping scrape.');
+    return;
+  }
+
   const { scrapeDiceEvents } = await import('../src/lib/dice/scraper');
   console.log('[Dice Runner] Starting Dice scraper:', new Date().toISOString());
   

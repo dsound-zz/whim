@@ -14,8 +14,14 @@
 import 'dotenv/config';
 import { ingestSeatGeekEvents } from '@/lib/seatgeek/client';
 import { updateIngestionSourceStatus } from '@/lib/db/ingestionService';
+import { isDemoModeEnabled } from '@/lib/utils/demoMode';
 
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[SyncSeatGeek] DEMO_MODE active — skipping sync.');
+    return;
+  }
+
   const startTime = Date.now();
   console.log('[SyncSeatGeek] Starting SeatGeek ingestion:', new Date().toISOString());
 

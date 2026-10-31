@@ -3,6 +3,7 @@ import { ingestTicketmasterEvents } from '@/lib/ticketmaster/client';
 import { db } from '@/db';
 import { ingestionSources } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { isDemoModeEnabled } from '@/lib/utils/demoMode';
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -10,6 +11,10 @@ export async function GET(request: NextRequest) {
   // Verify CRON_SECRET to prevent unauthorized triggering
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  if (isDemoModeEnabled()) {
+    return NextResponse.json({ success: true, skipped: true, reason: 'DEMO_MODE active' });
   }
 
   try {

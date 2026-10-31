@@ -19,6 +19,7 @@ import { eq, gt, and, inArray } from 'drizzle-orm';
 import { verifyEventIntegrity } from '@/lib/verification/verifyEventIntegrity';
 import { saveVerificationLog } from '@/lib/db/verificationService';
 import type { EventData } from '@/types/verification';
+import { isDemoModeEnabled } from '@/lib/utils/demoMode';
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────
 
@@ -42,6 +43,11 @@ function parseArgs(): { limit: number; sourceType: string | null } {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[IntegrityCheck] DEMO_MODE active — skipping run.');
+    return;
+  }
+
   const startTime = Date.now();
   const { limit, sourceType } = parseArgs();
 

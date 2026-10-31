@@ -7,8 +7,14 @@ dotenv.config();
  * Exits 0 on success, 1 on failure.
  */
 import { runNYCParksIngestion } from '../src/lib/ingestion/nycParks';
+import { isDemoModeEnabled } from '../src/lib/utils/demoMode';
 
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[NYC Parks Sync] DEMO_MODE active — skipping sync.');
+    return;
+  }
+
   console.log('[NYC Parks Sync] Starting:', new Date().toISOString());
 
   const result = await runNYCParksIngestion();

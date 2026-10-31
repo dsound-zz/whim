@@ -13,6 +13,8 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+import { isDemoModeEnabled } from '../src/lib/utils/demoMode';
+
 // ─── CLI argument parsing ─────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
@@ -20,6 +22,11 @@ const singleUrl = args.includes('--url') ? args[args.indexOf('--url') + 1] : nul
 const singleId = args.includes('--id') ? args[args.indexOf('--id') + 1] : null;
 
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[sync-ical] DEMO_MODE active — skipping sync.');
+    return;
+  }
+
   const { db } = await import('../src/db');
   const { ingestionSources } = await import('../src/db/schema');
   const { eq, and, ne } = await import('drizzle-orm');

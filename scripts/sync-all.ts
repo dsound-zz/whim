@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { isDemoModeEnabled } from '../src/lib/utils/demoMode';
 
 const SCRIPTS = [
   { name: 'Ticketmaster', command: 'sync:ticketmaster' },
@@ -35,6 +36,11 @@ async function runCommand(cmd: string, args: string[]): Promise<number> {
 }
 
 async function main() {
+  if (isDemoModeEnabled()) {
+    console.log('[SyncAll] DEMO_MODE active — skipping the full ingestion pipeline.');
+    return;
+  }
+
   console.log('=====================================');
   console.log(' Starting Full Ingestion Pipeline    ');
   console.log('=====================================');
