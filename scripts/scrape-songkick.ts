@@ -1,14 +1,20 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { 
-  normalizeSongkickEvent, 
-  upsertSongkickEvent, 
-  updateSongkickIngestionSourceStatus, 
-  RawSongkickEvent 
+import {
+  normalizeSongkickEvent,
+  upsertSongkickEvent,
+  updateSongkickIngestionSourceStatus,
+  RawSongkickEvent
 } from '../src/lib/ingestion/songkick';
+import { isDemoModeEnabled } from '../src/lib/utils/demoMode';
 
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[Songkick Scraper] DEMO_MODE active — skipping scrape.');
+    return;
+  }
+
   console.log('[Songkick] Starting scrape:', new Date().toISOString());
 
   const { chromium } = await import('playwright-extra');

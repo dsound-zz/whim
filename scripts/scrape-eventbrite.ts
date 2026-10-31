@@ -17,6 +17,8 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+import { isDemoModeEnabled } from '../src/lib/utils/demoMode';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface EventbriteAddress {
@@ -204,6 +206,11 @@ function buildPlatformTaxonomy(tags: EventbriteTag[]): { ebriteCategory?: string
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[Eventbrite Scraper] DEMO_MODE active — skipping scrape.');
+    return;
+  }
+
   const { db } = await import('../src/db');
   const { events } = await import('../src/db/schema');
   const { eq, and } = await import('drizzle-orm');

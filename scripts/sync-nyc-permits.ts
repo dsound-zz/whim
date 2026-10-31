@@ -24,6 +24,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 import type { WhimCategory } from '../src/lib/utils/categorizeEvent';
+import { isDemoModeEnabled } from '../src/lib/utils/demoMode';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -175,6 +176,11 @@ function buildDescription(event: NycPermitEvent): string {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[NYCPermits] DEMO_MODE active — skipping sync.');
+    return;
+  }
+
   const { db } = await import('../src/db');
   const { events } = await import('../src/db/schema');
   const { eq, and, gt, lte, inArray } = await import('drizzle-orm');

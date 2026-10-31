@@ -7,8 +7,14 @@ dotenv.config();
  * Exits 0 on success, 1 on failure so Railway can detect job failures.
  */
 import { runTicketmasterIngestion } from '../src/lib/ingestion/ticketmaster'
+import { isDemoModeEnabled } from '../src/lib/utils/demoMode'
 
 async function main(): Promise<void> {
+  if (isDemoModeEnabled()) {
+    console.log('[TM Sync] DEMO_MODE active — skipping sync.')
+    return
+  }
+
   console.log('[TM Sync] Starting:', new Date().toISOString())
 
   const result = await runTicketmasterIngestion()
